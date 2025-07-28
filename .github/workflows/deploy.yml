@@ -1,60 +1,82 @@
-name: CI/CD React Docker Deployment
+# .github/workflows/deploy-frontend.yml
+
+name: Deploy React Frontend to VMs
 
 on:
   push:
     branches:
       - main
 
-env:
-  DOCKER_IMAGE: your_dockerhub_username/react-hello-app:latest
-  VM1_HOST: your.vm1.public.ip
-  VM2_HOST: your.vm2.public.ip
-  SSH_USER: ec2-user  # ou ubuntu si Ubuntu
-
 jobs:
-  build-push-deploy:
+  deploy:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
+      - name: Checkout repo
         uses: actions/checkout@v3
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Login to Docker Hub
-        uses: docker/login-action@v3
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          node-version: '18'
 
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v5
+      - name: Install dependencies
+        run: |
+          cd hello-react
+          npm install
+
+      - name: Build React app
+        run: |
+          cd hello-react
+          npm run build
+
+      - name: Build Docker image
+        run: |
+          cd hello-react
+          docker build -t react-hello-app .
+
+      - name: Save Docker image to tar
+        run: |
+          docker save react-hello-app > react-hello-app.tar
+
+      - name: Copy Docker image to VM frontend 1
+        uses: appleboy/scp-action@v0.1.7
         with:
-          push: true
-          tags: ${{ env.DOCKER_IMAGE }}
+          host: ${{ secrets.VM1_IP }}
+          username: ec2-user
+          key: ${{ secrets.SSH_KEY }}
+          source: "react-hello-app.tar"
+          target: /home/ec2-user/
 
-      - name: Deploy to VM1
+      - name: Deploy container on frontend 1
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ env.VM1_HOST }}
-          username: ${{ env.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          host: ${{ secrets.VM1_IP }}
+          username: ec2-user
+          key: ${{ secrets.SSH_KEY }}
           script: |
-            sudo docker pull ${{ env.DOCKER_IMAGE }}
-            sudo docker stop react || true
-            sudo docker rm react || true
-            sudo docker run -d --name react -p 80:80 ${{ env.DOCKER_IMAGE }}
+            docker load < react-hello-app.tar
+            docker stop app || true && docker rm app || true
+            docker run -d -p 80:80 --name app react-hello-app
 
-      - name: Deploy to VM2
+      - name: Copy Docker image to VM frontend 2
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VM2_IP }}
+          username: ec2-user
+          key: ${{ secrets.SSH_KEY }}
+          source: "react-hello-app.tar"
+          target: /home/ec2-user/
+
+      - name: Deploy container on frontend 2
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ env.VM2_HOST }}
-          username: ${{ env.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          host: ${{ secrets.VM2_IP }}
+          username: ec2-user
+          key: ${{ secrets.SSH_KEY }}
           script: |
-            sudo docker pull ${{ env.DOCKER_IMAGE }}
-            sudo docker stop react || true
-            sudo docker rm react || true
-            sudo docker run -d --name react -p 80:80 ${{ env.DOCKER_IMAGE }}
+            docker load < react-hello-app.tar
+            docker stop app || true && docker rm app || true
+            docker run -d -p 80:80 --name app react-hello-app
+
 
