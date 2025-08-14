@@ -126,12 +126,7 @@ resource "aws_lb" "frontend_lb" {
   subnets            = [aws_subnet.subnet_a.id, aws_subnet.subnet_b.id]
 }
 
-resource "aws_lb_target_group" "frontend_tg" {
-  name     = "frontend-tg"
-  port     = 80
-  protocol = "HTTP"
-  vpc_id   = aws_vpc.main.id
-}
+
 
 resource "aws_lb_listener" "frontend_listener" {
   load_balancer_arn = aws_lb.frontend_lb.arn
@@ -159,12 +154,6 @@ resource "aws_lb" "backend_lb" {
   subnets            = [aws_subnet.subnet_a.id, aws_subnet.subnet_b.id]
 }
 
-resource "aws_lb_target_group" "backend_tg" {
-  name     = "backend-tg"
-  port     = 80
-  protocol = "HTTP"
-  vpc_id   = aws_vpc.main.id
-}
 
 resource "aws_lb_listener" "backend_listener" {
   load_balancer_arn = aws_lb.backend_lb.arn
