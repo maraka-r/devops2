@@ -1,4 +1,4 @@
-name: Build, Push & Deploy (multi-VM + ALB)
+name: Build, Push & Deploy (multi-VM + ALB - Rolling Update)
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
 
 env:
   IMAGE_NAME: ${{ secrets.DOCKERHUB_USERNAME }}/react-hello-world:latest
-  SSH_USER: ec2-user   # ubuntu si AMI Ubuntu
+  SSH_USER: ec2-user # ubuntu si AMI Ubuntu
 
 jobs:
   build_and_push:
@@ -26,27 +26,33 @@ jobs:
           docker build -t $IMAGE_NAME .
           docker push $IMAGE_NAME
 
-  deploy_parallel:
+  deploy_rolling:
     needs: build_and_push
     runs-on: ubuntu-latest
     strategy:
+      max-parallel: 1 # rolling update
       matrix:
-        host: [ "${{ secrets.HOST_1 }}", "${{ secrets.HOST_2 }}" ]
+        host_name: [ "HOST_1", "HOST_2" ] # noms symboliques
     steps:
-      - name: Install SSH key
+      - name: Set host from secrets
+        id: set-host
         run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
+          if [ "${{ matrix.host_name }}" = "HOST_1" ]; then
+            echo "HOST=${{ secrets.HOST_1 }}" >> $GITHUB_ENV
+          elif [ "${{ matrix.host_name }}" = "HOST_2" ]; then
+            echo "HOST=${{ secrets.HOST_2 }}" >> $GITHUB_ENV
+          fi
 
-      - name: Deploy on ${{ matrix.host }}
+      - name: Deploy to ${{ matrix.host_name }}
         uses: appleboy/ssh-action@v0.1.8
         with:
-          host: ${{ matrix.host }}
+          host: ${{ env.HOST }}
           username: ${{ env.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            docker pull $IMAGE_NAME
-            docker stop react-app || true
-            docker rm react-app || true
-            docker run -d --name react-app -p 80:80 --restart=always $IMAGE_NAME
+            docker run -d \
+              --name react-app \
+              --pull always \
+              --restart=always \
+              -p 80:80 \
+              $IMAGE_NAME
