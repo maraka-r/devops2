@@ -16,7 +16,7 @@ COPY . .
 # Construire l'application pour la production
 RUN npm run build
 
-# Étape 2 : image Nginx pour servir l'application
+# Étape 2 : image  Nginx pour servir l'application
 FROM nginx:alpine
 
 # Supprimer la configuration par défaut de Nginx
