@@ -1,10 +1,10 @@
-# Étape 1 : build de l'application React
+# Étape 1 : Build de l'application React
 FROM node:18-alpine AS build
 
 # Définir le répertoire de travail
 WORKDIR /app
 
-# Copier uniquement les fichiers de dépendances d'abord pour profiter du cache Docker
+# Copier uniquement les fichiers de dépendances pour profiter du cache Docker
 COPY package.json package-lock.json ./
 
 # Installer les dépendances
@@ -16,7 +16,7 @@ COPY . .
 # Construire l'application pour la production
 RUN npm run build
 
-# Étape 2 : image  Nginx pour servir l'application
+# Étape 2 : Image Nginx pour servir l'application
 FROM nginx:alpine
 
 # Supprimer la configuration par défaut de Nginx
