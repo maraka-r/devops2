@@ -27,16 +27,13 @@ jobs:
         working-directory: ./frontend
 
       - name: Archive build output
-        run: tar -czf react-build.tar.gz -C frontend/build .
-
-      - name: Verify artifact on runner
-        run: ls -l react-build.tar.gz
+        run: tar -czf frontend/react-build.tar.gz -C frontend/build .
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: react-build
-          path: react-build.tar.gz
+          path: frontend/react-build.tar.gz
 
   deploy-vm1:
     needs: build
@@ -55,8 +52,8 @@ jobs:
           host: ${{ secrets.VM1_IP }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: react-build.tar.gz
-          target: /home/${{ secrets.SSH_USER }}/react-build.tar.gz
+          source: frontend/react-build.tar.gz
+          target: ~/react-build.tar.gz
 
       - name: Deploy on VM1
         uses: appleboy/ssh-action@v1.0.0
@@ -65,16 +62,16 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            if [ ! -f "/home/${{ secrets.SSH_USER }}/react-build.tar.gz" ]; then
+            if [ ! -f ~/react-build.tar.gz ]; then
               echo "Erreur : react-build.tar.gz non trouvé dans le home"
               exit 1
             fi
 
-            mkdir -p /home/${{ secrets.SSH_USER }}/react-app/dist
+            mkdir -p ~/react-app/dist
 
-            tar -xzf /home/${{ secrets.SSH_USER }}/react-build.tar.gz -C /home/${{ secrets.SSH_USER }}/react-app/dist
+            tar -xzf ~/react-build.tar.gz -C ~/react-app/dist
 
-            rm /home/${{ secrets.SSH_USER }}/react-build.tar.gz
+            rm ~/react-build.tar.gz
 
             if ! command -v nginx &> /dev/null; then
               echo "Nginx non trouvé, installation en cours..."
@@ -105,35 +102,10 @@ jobs:
           host: ${{ secrets.VM2_IP }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: react-build.tar.gz
-          target: /home/${{ secrets.SSH_USER }}/react-build.tar.gz
+          source: frontend/react-build.tar.gz
+          target: ~/react-build.tar.gz
 
       - name: Deploy on VM2
         uses: appleboy/ssh-action@v1.0.0
         with:
-          host: ${{ secrets.VM2_IP }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          script: |
-            if [ ! -f "/home/${{ secrets.SSH_USER }}/react-build.tar.gz" ]; then
-              echo "Erreur : react-build.tar.gz non trouvé dans le home"
-              exit 1
-            fi
-
-            mkdir -p /home/${{ secrets.SSH_USER }}/react-app/dist
-
-            tar -xzf /home/${{ secrets.SSH_USER }}/react-build.tar.gz -C /home/${{ secrets.SSH_USER }}/react-app/dist
-
-            rm /home/${{ secrets.SSH_USER }}/react-build.tar.gz
-
-            if ! command -v nginx &> /dev/null; then
-              echo "Nginx non trouvé, installation en cours..."
-              if [ -f /etc/debian_version ]; then
-                sudo apt-get update && sudo apt-get install -y nginx
-              else
-                sudo yum install -y nginx
-              fi
-              sudo systemctl enable nginx
-            fi
-
-            sudo systemctl restart nginx
+          host: ${{ secret
