@@ -8,7 +8,6 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout repo
         uses: actions/checkout@v3
@@ -16,18 +15,16 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: 18
+          node-version: '18'
 
       - name: Install dependencies
-        run: npm install
-        working-directory: ./frontend
+        run: npm ci
 
       - name: Build React app
         run: npm run build
-        working-directory: ./frontend
 
       - name: Archive build output
-        run: tar -czf react-build.tar.gz -C frontend/build .
+        run: tar -czf react-build.tar.gz -C build .
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
@@ -35,52 +32,52 @@ jobs:
           name: react-build
           path: react-build.tar.gz
 
-
-  deploy-vm1:
+  deploy:
     needs: build
     runs-on: ubuntu-latest
-
     steps:
-      - name: Download artifact
-        uses: actions/download-artifact@v4
+      - name: Download build artifact
+        uses: actions/download-artifact@v3
         with:
           name: react-build
           path: .
 
-      - name: Copy build to VM1
+      - name: Copy build artifact to remote server
         uses: appleboy/scp-action@v0.1.4
         with:
-          host: ${{ secrets.VM1_IP }}
+          host: ${{ secrets.VM_IP }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: 22
           source: react-build.tar.gz
           target: ~/react-build.tar.gz
 
-      - name: Deploy on VM1
+      - name: Deploy on remote server
         uses: appleboy/ssh-action@v1.0.0
         with:
-          host: ${{ secrets.VM1_IP }}
+          host: ${{ secrets.VM_IP }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: 22
           script: |
-            # Remove any existing file or folder named react-build.tar.gz
+            # Supprime ancien fichier ou dossier (au cas où)
             rm -rf ~/react-build.tar.gz
-            
-            # Move uploaded file from home directory (scp puts it here)
-            mv ~/react-build.tar.gz ~/react-build.tar.gz
-            
-            # Make sure destination folder exists
+
+            # (Debug) Liste fichiers dans home
+            ls -l ~
+
+            # Crée dossier destination
             mkdir -p ~/react-app/dist
-            
-            # Extract archive into dist folder
+
+            # Décompresse archive dans le dossier dist
             tar -xzf ~/react-build.tar.gz -C ~/react-app/dist
-            
-            # Remove archive after extraction
+
+            # Supprime archive après extraction
             rm ~/react-build.tar.gz
-            
-            # Check if nginx is installed, install if missing
+
+            # Installe nginx si absent
             if ! command -v nginx &> /dev/null; then
-              echo "Nginx not found. Installing..."
+              echo "Nginx non trouvé, installation en cours..."
               if [ -f /etc/debian_version ]; then
                 sudo apt-get update && sudo apt-get install -y nginx
               else
@@ -88,50 +85,6 @@ jobs:
               fi
               sudo systemctl enable nginx
             fi
-            
-            # Restart nginx service to apply changes
-            sudo systemctl restart nginx
 
-
-  deploy-vm2:
-    needs: build
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Download artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: react-build
-          path: .
-
-      - name: Copy build to VM2
-        uses: appleboy/scp-action@v0.1.4
-        with:
-          host: ${{ secrets.VM2_IP }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: react-build.tar.gz
-          target: ~/react-build.tar.gz
-
-      - name: Deploy on VM2
-        uses: appleboy/ssh-action@v1.0.0
-        with:
-          host: ${{ secrets.VM2_IP }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          script: |
-            rm -rf ~/react-build.tar.gz
-            mv ~/react-build.tar.gz ~/react-build.tar.gz
-            mkdir -p ~/react-app/dist
-            tar -xzf ~/react-build.tar.gz -C ~/react-app/dist
-            rm ~/react-build.tar.gz
-            if ! command -v nginx &> /dev/null; then
-              echo "Nginx not found. Installing..."
-              if [ -f /etc/debian_version ]; then
-                sudo apt-get update && sudo apt-get install -y nginx
-              else
-                sudo yum install -y nginx
-              fi
-              sudo systemctl enable nginx
-            fi
+            # Redémarre nginx
             sudo systemctl restart nginx
