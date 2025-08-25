@@ -35,6 +35,7 @@ jobs:
           name: react-build
           path: react-build.tar.gz
 
+
   deploy-vm1:
     needs: build
     runs-on: ubuntu-latest
@@ -62,10 +63,35 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
+            # Remove any existing file or folder named react-build.tar.gz
+            rm -rf ~/react-build.tar.gz
+            
+            # Move uploaded file from home directory (scp puts it here)
+            mv ~/react-build.tar.gz ~/react-build.tar.gz
+            
+            # Make sure destination folder exists
             mkdir -p ~/react-app/dist
+            
+            # Extract archive into dist folder
             tar -xzf ~/react-build.tar.gz -C ~/react-app/dist
+            
+            # Remove archive after extraction
             rm ~/react-build.tar.gz
+            
+            # Check if nginx is installed, install if missing
+            if ! command -v nginx &> /dev/null; then
+              echo "Nginx not found. Installing..."
+              if [ -f /etc/debian_version ]; then
+                sudo apt-get update && sudo apt-get install -y nginx
+              else
+                sudo yum install -y nginx
+              fi
+              sudo systemctl enable nginx
+            fi
+            
+            # Restart nginx service to apply changes
             sudo systemctl restart nginx
+
 
   deploy-vm2:
     needs: build
@@ -94,8 +120,18 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
+            rm -rf ~/react-build.tar.gz
+            mv ~/react-build.tar.gz ~/react-build.tar.gz
             mkdir -p ~/react-app/dist
             tar -xzf ~/react-build.tar.gz -C ~/react-app/dist
             rm ~/react-build.tar.gz
+            if ! command -v nginx &> /dev/null; then
+              echo "Nginx not found. Installing..."
+              if [ -f /etc/debian_version ]; then
+                sudo apt-get update && sudo apt-get install -y nginx
+              else
+                sudo yum install -y nginx
+              fi
+              sudo systemctl enable nginx
+            fi
             sudo systemctl restart nginx
-
