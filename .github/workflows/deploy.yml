@@ -1,49 +1,86 @@
-deploy-vm1:
-  needs: build
-  runs-on: ubuntu-latest
+name: Build and Deploy React App
 
-  steps:
-    - name: Download artifact
-      uses: actions/download-artifact@v4
-      with:
-        name: react-build
-        path: .
+on:
+  push:
+    branches:
+      - main
 
-    - name: Copy build to VM1
-      uses: appleboy/scp-action@v0.1.4
-      with:
-        host: ${{ secrets.VM1_IP }}
-        username: ${{ secrets.SSH_USER }}
-        key: ${{ secrets.SSH_PRIVATE_KEY }}
-        source: frontend/react-build.tar.gz
-        target: ~/react-build.tar.gz
+jobs:
+  build:
+    runs-on: ubuntu-latest
 
-    - name: Deploy on VM1
-      uses: appleboy/ssh-action@v1.0.0
-      with:
-        host: ${{ secrets.VM1_IP }}
-        username: ${{ secrets.SSH_USER }}
-        key: ${{ secrets.SSH_PRIVATE_KEY }}
-        script: |
-          if [ ! -f ~/react-build.tar.gz ]; then
-            echo "Erreur : react-build.tar.gz non trouvé dans le home"
-            exit 1
-          fi
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-          mkdir -p ~/react-app/dist
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
 
-          tar -xzf ~/react-build.tar.gz -C ~/react-app/dist
+      - name: Install dependencies
+        run: npm install
+        working-directory: ./frontend
 
-          rm ~/react-build.tar.gz
+      - name: Build React app
+        run: npm run build
+        working-directory: ./frontend
 
-          if ! command -v nginx &> /dev/null; then
-            echo "Nginx non trouvé, installation en cours..."
-            if [ -f /etc/debian_version ]; then
-              sudo apt-get update && sudo apt-get install -y nginx
-            else
-              sudo yum install -y nginx
+      - name: Archive build files
+        run: tar -czf react-build.tar.gz -C frontend/build .
+      
+      - name: Upload artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: react-build
+          path: react-build.tar.gz
+
+  deploy-vm1:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: react-build
+          path: .
+
+      - name: Copy build to VM1
+        uses: appleboy/scp-action@v0.1.4
+        with:
+          host: ${{ secrets.VM1_IP }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: react-build.tar.gz
+          target: ~/react-build.tar.gz
+
+      - name: Deploy on VM1
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.VM1_IP }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            if [ ! -f ~/react-build.tar.gz ]; then
+              echo "Erreur : react-build.tar.gz non trouvé dans le home"
+              exit 1
             fi
-            sudo systemctl enable nginx
-          fi
 
-          sudo systemctl restart nginx
+            mkdir -p ~/react-app/dist
+
+            tar -xzf ~/react-build.tar.gz -C ~/react-app/dist
+
+            rm ~/react-build.tar.gz
+
+            if ! command -v nginx &> /dev/null; then
+              echo "Nginx non trouvé, installation en cours..."
+              if [ -f /etc/debian_version ]; then
+                sudo apt-get update && sudo apt-get install -y nginx
+              else
+                sudo yum install -y nginx
+              fi
+              sudo systemctl enable nginx
+            fi
+
+            sudo systemctl restart nginx
