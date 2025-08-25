@@ -53,7 +53,7 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           source: react-build.tar.gz
-          target: ~/react-build.tar.gz
+          target: /home/${{ secrets.SSH_USER }}/react-build.tar.gz
 
       - name: Deploy on VM1
         uses: appleboy/ssh-action@v1.0.0
@@ -62,16 +62,16 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            if [ ! -f ~/react-build.tar.gz ]; then
+            if [ ! -f "$HOME/react-build.tar.gz" ]; then
               echo "Erreur : react-build.tar.gz non trouvé dans le home"
               exit 1
             fi
 
-            mkdir -p ~/react-app/dist
+            mkdir -p "$HOME/react-app/dist"
 
-            tar -xzf ~/react-build.tar.gz -C ~/react-app/dist
+            tar -xzf "$HOME/react-build.tar.gz" -C "$HOME/react-app/dist"
 
-            rm ~/react-build.tar.gz
+            rm "$HOME/react-build.tar.gz"
 
             if ! command -v nginx &> /dev/null; then
               echo "Nginx non trouvé, installation en cours..."
@@ -103,7 +103,7 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           source: react-build.tar.gz
-          target: ~/react-build.tar.gz
+          target: /home/${{ secrets.SSH_USER }}/react-build.tar.gz
 
       - name: Deploy on VM2
         uses: appleboy/ssh-action@v1.0.0
@@ -112,16 +112,16 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            if [ ! -f ~/react-build.tar.gz ]; then
+            if [ ! -f "$HOME/react-build.tar.gz" ]; then
               echo "Erreur : react-build.tar.gz non trouvé dans le home"
               exit 1
             fi
 
-            mkdir -p ~/react-app/dist
+            mkdir -p "$HOME/react-app/dist"
 
-            tar -xzf ~/react-build.tar.gz -C ~/react-app/dist
+            tar -xzf "$HOME/react-build.tar.gz" -C "$HOME/react-app/dist"
 
-            rm ~/react-build.tar.gz
+            rm "$HOME/react-build.tar.gz"
 
             if ! command -v nginx &> /dev/null; then
               echo "Nginx non trouvé, installation en cours..."
