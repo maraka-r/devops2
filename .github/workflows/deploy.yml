@@ -29,6 +29,9 @@ jobs:
       - name: Archive build output
         run: tar -czf react-build.tar.gz -C frontend/build .
 
+      - name: Verify artifact on runner
+        run: ls -l react-build.tar.gz
+
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
@@ -46,7 +49,7 @@ jobs:
           name: react-build
           path: .
 
-      - name: Copy build to VM1 with debug
+      - name: Copy build to VM1
         uses: appleboy/scp-action@v0.1.4
         with:
           host: ${{ secrets.VM1_IP }}
@@ -54,21 +57,6 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           source: react-build.tar.gz
           target: /home/${{ secrets.SSH_USER }}/react-build.tar.gz
-          debug: true
-
-      - name: Debug home and file presence on VM1
-        uses: appleboy/ssh-action@v1.0.0
-        with:
-          host: ${{ secrets.VM1_IP }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          script: |
-            echo "User: $(whoami)"
-            echo "Home: $HOME"
-            ls -ld "$HOME"
-            ls -l "$HOME"
-            ls -l /home/${{ secrets.SSH_USER }}
-            ls -l /root
 
       - name: Deploy on VM1
         uses: appleboy/ssh-action@v1.0.0
@@ -77,16 +65,16 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            if [ ! -f "$HOME/react-build.tar.gz" ]; then
+            if [ ! -f "/home/${{ secrets.SSH_USER }}/react-build.tar.gz" ]; then
               echo "Erreur : react-build.tar.gz non trouvé dans le home"
               exit 1
             fi
 
-            mkdir -p "$HOME/react-app/dist"
+            mkdir -p /home/${{ secrets.SSH_USER }}/react-app/dist
 
-            tar -xzf "$HOME/react-build.tar.gz" -C "$HOME/react-app/dist"
+            tar -xzf /home/${{ secrets.SSH_USER }}/react-build.tar.gz -C /home/${{ secrets.SSH_USER }}/react-app/dist
 
-            rm "$HOME/react-build.tar.gz"
+            rm /home/${{ secrets.SSH_USER }}/react-build.tar.gz
 
             if ! command -v nginx &> /dev/null; then
               echo "Nginx non trouvé, installation en cours..."
@@ -111,7 +99,7 @@ jobs:
           name: react-build
           path: .
 
-      - name: Copy build to VM2 with debug
+      - name: Copy build to VM2
         uses: appleboy/scp-action@v0.1.4
         with:
           host: ${{ secrets.VM2_IP }}
@@ -119,21 +107,6 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           source: react-build.tar.gz
           target: /home/${{ secrets.SSH_USER }}/react-build.tar.gz
-          debug: true
-
-      - name: Debug home and file presence on VM2
-        uses: appleboy/ssh-action@v1.0.0
-        with:
-          host: ${{ secrets.VM2_IP }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          script: |
-            echo "User: $(whoami)"
-            echo "Home: $HOME"
-            ls -ld "$HOME"
-            ls -l "$HOME"
-            ls -l /home/${{ secrets.SSH_USER }}
-            ls -l /root
 
       - name: Deploy on VM2
         uses: appleboy/ssh-action@v1.0.0
@@ -142,16 +115,16 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            if [ ! -f "$HOME/react-build.tar.gz" ]; then
+            if [ ! -f "/home/${{ secrets.SSH_USER }}/react-build.tar.gz" ]; then
               echo "Erreur : react-build.tar.gz non trouvé dans le home"
               exit 1
             fi
 
-            mkdir -p "$HOME/react-app/dist"
+            mkdir -p /home/${{ secrets.SSH_USER }}/react-app/dist
 
-            tar -xzf "$HOME/react-build.tar.gz" -C "$HOME/react-app/dist"
+            tar -xzf /home/${{ secrets.SSH_USER }}/react-build.tar.gz -C /home/${{ secrets.SSH_USER }}/react-app/dist
 
-            rm "$HOME/react-build.tar.gz"
+            rm /home/${{ secrets.SSH_USER }}/react-build.tar.gz
 
             if ! command -v nginx &> /dev/null; then
               echo "Nginx non trouvé, installation en cours..."
