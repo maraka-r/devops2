@@ -29,7 +29,7 @@ jobs:
       - name: Archive build output
         run: tar -czf react-build.tar.gz -C frontend/build .
 
-      - name: Upload artifact
+      - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: react-build
@@ -98,3 +98,4 @@ jobs:
             tar -xzf ~/react-build.tar.gz -C ~/react-app/dist
             rm ~/react-build.tar.gz
             sudo systemctl restart nginx
+
