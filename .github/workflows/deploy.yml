@@ -1,4 +1,4 @@
-name: Build and Deploy React App
+name: CI/CD Pipeline
 
 on:
   push:
@@ -20,17 +20,17 @@ jobs:
 
       - name: Install dependencies
         run: npm install
-        working-directory: ./frontend
+        working-directory: frontend
 
       - name: Build React app
         run: npm run build
-        working-directory: ./frontend
+        working-directory: frontend
 
-      - name: Archive build files
+      - name: Archive build output
         run: tar -czf react-build.tar.gz -C frontend/build .
-      
+
       - name: Upload artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: react-build
           path: react-build.tar.gz
