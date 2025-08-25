@@ -46,7 +46,7 @@ jobs:
           name: react-build
           path: .
 
-      - name: Copy build to VM1
+      - name: Copy build to VM1 with debug
         uses: appleboy/scp-action@v0.1.4
         with:
           host: ${{ secrets.VM1_IP }}
@@ -54,6 +54,21 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           source: react-build.tar.gz
           target: /home/${{ secrets.SSH_USER }}/react-build.tar.gz
+          debug: true
+
+      - name: Debug home and file presence on VM1
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.VM1_IP }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            echo "User: $(whoami)"
+            echo "Home: $HOME"
+            ls -ld "$HOME"
+            ls -l "$HOME"
+            ls -l /home/${{ secrets.SSH_USER }}
+            ls -l /root
 
       - name: Deploy on VM1
         uses: appleboy/ssh-action@v1.0.0
@@ -96,7 +111,7 @@ jobs:
           name: react-build
           path: .
 
-      - name: Copy build to VM2
+      - name: Copy build to VM2 with debug
         uses: appleboy/scp-action@v0.1.4
         with:
           host: ${{ secrets.VM2_IP }}
@@ -104,6 +119,21 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           source: react-build.tar.gz
           target: /home/${{ secrets.SSH_USER }}/react-build.tar.gz
+          debug: true
+
+      - name: Debug home and file presence on VM2
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.VM2_IP }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            echo "User: $(whoami)"
+            echo "Home: $HOME"
+            ls -ld "$HOME"
+            ls -l "$HOME"
+            ls -l /home/${{ secrets.SSH_USER }}
+            ls -l /root
 
       - name: Deploy on VM2
         uses: appleboy/ssh-action@v1.0.0
