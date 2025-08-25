@@ -1,111 +1,49 @@
-name: Build and Deploy React App
+deploy-vm1:
+  needs: build
+  runs-on: ubuntu-latest
 
-on:
-  push:
-    branches:
-      - main
+  steps:
+    - name: Download artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: react-build
+        path: .
 
-jobs:
-  build:
-    runs-on: ubuntu-latest
+    - name: Copy build to VM1
+      uses: appleboy/scp-action@v0.1.4
+      with:
+        host: ${{ secrets.VM1_IP }}
+        username: ${{ secrets.SSH_USER }}
+        key: ${{ secrets.SSH_PRIVATE_KEY }}
+        source: frontend/react-build.tar.gz
+        target: ~/react-build.tar.gz
 
-    steps:
-      - name: Checkout repo
-        uses: actions/checkout@v3
+    - name: Deploy on VM1
+      uses: appleboy/ssh-action@v1.0.0
+      with:
+        host: ${{ secrets.VM1_IP }}
+        username: ${{ secrets.SSH_USER }}
+        key: ${{ secrets.SSH_PRIVATE_KEY }}
+        script: |
+          if [ ! -f ~/react-build.tar.gz ]; then
+            echo "Erreur : react-build.tar.gz non trouvé dans le home"
+            exit 1
+          fi
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: 18
+          mkdir -p ~/react-app/dist
 
-      - name: Install dependencies
-        run: npm install
-        working-directory: ./frontend
+          tar -xzf ~/react-build.tar.gz -C ~/react-app/dist
 
-      - name: Build React app
-        run: npm run build
-        working-directory: ./frontend
+          rm ~/react-build.tar.gz
 
-      - name: Archive build output
-        run: tar -czf frontend/react-build.tar.gz -C frontend/build .
-
-      - name: Upload build artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: react-build
-          path: frontend/react-build.tar.gz
-
-  deploy-vm1:
-    needs: build
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Download artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: react-build
-          path: .
-
-      - name: Copy build to VM1
-        uses: appleboy/scp-action@v0.1.4
-        with:
-          host: ${{ secrets.VM1_IP }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: frontend/react-build.tar.gz
-          target: ~/react-build.tar.gz
-
-      - name: Deploy on VM1
-        uses: appleboy/ssh-action@v1.0.0
-        with:
-          host: ${{ secrets.VM1_IP }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          script: |
-            if [ ! -f ~/react-build.tar.gz ]; then
-              echo "Erreur : react-build.tar.gz non trouvé dans le home"
-              exit 1
+          if ! command -v nginx &> /dev/null; then
+            echo "Nginx non trouvé, installation en cours..."
+            if [ -f /etc/debian_version ]; then
+              sudo apt-get update && sudo apt-get install -y nginx
+            else
+              sudo yum install -y nginx
             fi
+            sudo systemctl enable nginx
+          fi
 
-            mkdir -p ~/react-app/dist
-
-            tar -xzf ~/react-build.tar.gz -C ~/react-app/dist
-
-            rm ~/react-build.tar.gz
-
-            if ! command -v nginx &> /dev/null; then
-              echo "Nginx non trouvé, installation en cours..."
-              if [ -f /etc/debian_version ]; then
-                sudo apt-get update && sudo apt-get install -y nginx
-              else
-                sudo yum install -y nginx
-              fi
-              sudo systemctl enable nginx
-            fi
-
-            sudo systemctl restart nginx
-
-  deploy-vm2:
-    needs: build
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Download artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: react-build
-          path: .
-
-      - name: Copy build to VM2
-        uses: appleboy/scp-action@v0.1.4
-        with:
-          host: ${{ secrets.VM2_IP }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: frontend/react-build.tar.gz
-          target: ~/react-build.tar.gz
-
-      - name: Deploy on VM2
-        uses: appleboy/ssh-action@v1.0.0
-        with:
-          host: ${{ secret
+          sudo systemctl restart nginx
