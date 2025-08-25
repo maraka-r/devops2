@@ -29,6 +29,11 @@ jobs:
       - name: Archive build output
         run: tar -czf react-build.tar.gz -C frontend/build .
 
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: react-build
+          path: react-build.tar.gz
 
   deploy-vm1:
     needs: build
