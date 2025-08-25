@@ -1,4 +1,4 @@
-name: Build, Push & Deploy
+name: Build and Deploy React App
 
 on:
   push:
@@ -6,76 +6,93 @@ on:
       - main
 
 jobs:
-  build-push-deploy:
+  build:
     runs-on: ubuntu-latest
 
     steps:
-      # =====================
-      # 1. Checkout du code
-      # =====================
-      - name: Checkout repository
+      - name: Checkout repo
         uses: actions/checkout@v3
 
-      # =====================
-      # 2. Connexion DockerHub
-      # =====================
-      - name: Log in to DockerHub
-        uses: docker/login-action@v2
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
         with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
+          node-version: 18
 
-      # =====================
-      # 3. Build & Push Frontend
-      # =====================
-      - name: Build & Push Frontend
-        run: |
-          docker build -t ${{ secrets.DOCKER_USERNAME }}/react-frontend:latest ./frontend
-          docker push ${{ secrets.DOCKER_USERNAME }}/react-frontend:latest
+      - name: Install dependencies
+        run: npm install
 
-      # =====================
-      # 4. Build & Push Backend
-      # =====================
-      - name: Build & Push Backend
-        run: |
-          docker build -t ${{ secrets.DOCKER_USERNAME }}/backend-api:latest ./backend
-          docker push ${{ secrets.DOCKER_USERNAME }}/backend-api:latest
+      - name: Build React app
+        run: npm run build
 
-      # =====================
-      # 5. Déploiement sur les VM
-      # =====================
-      - name: Deploy on Frontend & Backend VMs
+      - name: Archive build output
+        run: tar -czf react-build.tar.gz -C build .
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: react-build
+          path: react-build.tar.gz
+
+  deploy-vm1:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v3
+        with:
+          name: react-build
+          path: .
+
+      - name: Copy build to VM1
+        uses: appleboy/scp-action@v0.1.4
+        with:
+          host: ${{ secrets.VM1_IP }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: react-build.tar.gz
+          target: ~/react-build.tar.gz
+
+      - name: Deploy on VM1
         uses: appleboy/ssh-action@v1.0.0
         with:
-          host: ${{ secrets.VM1_FRONT }}
-          username: ec2-user
-          key: ${{ secrets.AWS_SSH_KEY }}
+          host: ${{ secrets.VM1_IP }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            cd ~/app && docker-compose pull && docker-compose up -d --build
+            mkdir -p ~/react-app/dist
+            tar -xzf ~/react-build.tar.gz -C ~/react-app/dist
+            rm ~/react-build.tar.gz
+            sudo systemctl restart nginx
 
-      - name: Deploy on Frontend VM2
+  deploy-vm2:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v3
+        with:
+          name: react-build
+          path: .
+
+      - name: Copy build to VM2
+        uses: appleboy/scp-action@v0.1.4
+        with:
+          host: ${{ secrets.VM2_IP }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: react-build.tar.gz
+          target: ~/react-build.tar.gz
+
+      - name: Deploy on VM2
         uses: appleboy/ssh-action@v1.0.0
         with:
-          host: ${{ secrets.VM2_FRONT }}
-          username: ec2-user
-          key: ${{ secrets.AWS_SSH_KEY }}
+          host: ${{ secrets.VM2_IP }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            cd ~/app && docker-compose pull && docker-compose up -d --build
-
-      - name: Deploy on Backend VM1
-        uses: appleboy/ssh-action@v1.0.0
-        with:
-          host: ${{ secrets.VM1_BACK }}
-          username: ec2-user
-          key: ${{ secrets.AWS_SSH_KEY }}
-          script: |
-            cd ~/app && docker-compose pull && docker-compose up -d --build
-
-      - name: Deploy on Backend VM2
-        uses: appleboy/ssh-action@v1.0.0
-        with:
-          host: ${{ secrets.VM2_BACK }}
-          username: ec2-user
-          key: ${{ secrets.AWS_SSH_KEY }}
-          script: |
-            cd ~/app && docker-compose pull && docker-compose up -d --build
+            mkdir -p ~/react-app/dist
+            tar -xzf ~/react-build.tar.gz -C ~/react-app/dist
+            rm ~/react-build.tar.gz
+            sudo systemctl restart nginx
