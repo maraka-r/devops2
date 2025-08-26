@@ -56,8 +56,9 @@ jobs:
           host: ${{ secrets.VM1_IP }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: "*.tar.gz"
-          target: /home/${{ secrets.SSH_USER }}/
+          source: react-build.tar.gz
+          target: ~/
+         
 
       - name: Deploy containers on VM1
         uses: appleboy/ssh-action@v1.0.0
@@ -66,6 +67,10 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
+           mkdir -p ~/react-app/dist
+           tar -xzf ~/react-build.tar.gz -C ~/react-app/dist
+           rm ~/react-build.tar.gz
+           sudo systemctl restart nginx
             set -e
             cd /home/${{ secrets.SSH_USER }}
 
