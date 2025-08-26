@@ -1,134 +1,61 @@
-name: Build and Deploy Fullstack App
+name: Test Artifact Transfer
 
 on:
-  push:
-    branches:
-      - main
+  workflow_dispatch:  # Lancer manuellement pour tester
 
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout repo
+      - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Build React Frontend Docker image
-        run: docker build -t react-frontend:${{ github.sha }} .
-        working-directory: ./frontend
-
-      - name: Build Backend API Docker image
-        run: docker build -t backend-api:${{ github.sha }} .
-        working-directory: ./backend
-
-      - name: Save and compress React Frontend image
+      - name: Create dummy artifacts
         run: |
-          docker save react-frontend:${{ github.sha }} -o react-frontend.tar
-          gzip react-frontend.tar
+          echo "frontend build $(date)" > react-frontend.txt
+          echo "backend build $(date)" > backend-api.txt
+          tar -czf react-frontend.tar.gz react-frontend.txt
+          tar -czf backend-api.tar.gz backend-api.txt
 
-      - name: Save and compress Backend API image
-        run: |
-          docker save backend-api:${{ github.sha }} -o backend-api.tar
-          gzip backend-api.tar
+      - name: Debug build artifacts
+        run: ls -lh
 
-      - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
+      - name: Upload frontend artifact
+        uses: actions/upload-artifact@v3
         with:
-          name: docker-images
-          path: |
+          name: react-frontend
+          path: react-frontend.tar.gz
+
+      - name: Upload backend artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: backend-api
+          path: backend-api.tar.gz
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Download frontend artifact
+        uses: actions/download-artifact@v3
+        with:
+          name: react-frontend
+
+      - name: Download backend artifact
+        uses: actions/download-artifact@v3
+        with:
+          name: backend-api
+
+      - name: Debug downloaded artifacts
+        run: ls -lh
+
+      - name: Copy artifacts to server
+        uses: appleboy/scp-action@v0.1.4
+        with:
+          host: ${{ secrets.VM_HOST }}
+          username: ${{ secrets.VM_USER }}
+          key: ${{ secrets.VM_KEY }}
+          source: |
             react-frontend.tar.gz
             backend-api.tar.gz
-
-  deploy-vm1:
-    needs: build
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Download artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: docker-images
-          path: .
-
-      - name: Debug check files
-        run: ls -lh .
-
-      - name: Copy Docker images to VM1
-        uses: appleboy/scp-action@v0.1.4
-        with:
-          host: ${{ secrets.VM1_IP }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: |
-            ./react-frontend.tar.gz
-            ./backend-api.tar.gz
-          target: /home/${{ secrets.SSH_USER }}/
-
-      - name: Deploy containers on VM1
-        uses: appleboy/ssh-action@v1.0.0
-        with:
-          host: ${{ secrets.VM1_IP }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          script: |
-            set -e
-            cd /home/${{ secrets.SSH_USER }}
-
-            # Charger les images
-            gunzip -c react-frontend.tar.gz | docker load
-            gunzip -c backend-api.tar.gz | docker load
-
-            # Supprimer anciens conteneurs si existent
-            docker rm -f react-frontend || true
-            docker rm -f backend-api || true
-
-            # Lancer les containers
-            docker run -d --name react-frontend -p 8080:80 react-frontend:${{ github.sha }}
-            docker run -d --name backend-api -p 3000:3000 backend-api:${{ github.sha }}
-
-  deploy-vm2:
-    needs: build
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Download artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: docker-images
-          path: .
-
-      - name: Debug check files
-        run: ls -lh .
-
-      - name: Copy Docker images to VM2
-        uses: appleboy/scp-action@v0.1.4
-        with:
-          host: ${{ secrets.VM2_IP }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: |
-            ./react-frontend.tar.gz
-            ./backend-api.tar.gz
-          target: /home/${{ secrets.SSH_USER }}/
-
-      - name: Deploy containers on VM2
-        uses: appleboy/ssh-action@v1.0.0
-        with:
-          host: ${{ secrets.VM2_IP }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          script: |
-            set -e
-            cd /home/${{ secrets.SSH_USER }}
-
-            # Charger les images
-            gunzip -c react-frontend.tar.gz | docker load
-            gunzip -c backend-api.tar.gz | docker load
-
-            # Supprimer anciens conteneurs si existent
-            docker rm -f react-frontend || true
-            docker rm -f backend-api || true
-
-            # Lancer les containers
-            docker run -d --name react-frontend -p 8080:80 react-frontend:${{ github.sha }}
-            docker run -d --name backend-api -p 3000:3000 backend-api:${{ github.sha }}
+          target: /home/${{ secrets.VM_USER }}/
