@@ -17,7 +17,7 @@ jobs:
         run: docker build -t react-frontend:${{ github.sha }} .
         working-directory: ./frontend
 
-      - name: Build Backend API Docker  image
+      - name: Build Backend API Docker image
         run: docker build -t backend-api:${{ github.sha }} .
         working-directory: ./backend
 
@@ -56,9 +56,10 @@ jobs:
           host: ${{ secrets.VM1_IP }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-           source:react-frontend.tar.gz
-          target: ~/
-         
+          source: |
+            react-frontend.tar.gz
+            backend-api.tar.gz
+          target: /home/${{ secrets.SSH_USER }}/
 
       - name: Deploy containers on VM1
         uses: appleboy/ssh-action@v1.0.0
@@ -67,10 +68,6 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-           mkdir -p ~/react-app/dist
-           tar -xzf ~/react-frontend.tar.gz -C ~/react-app/dist
-           rm ~/react-frontend.tar.gz
-           sudo systemctl restart nginx
             set -e
             cd /home/${{ secrets.SSH_USER }}
 
@@ -83,8 +80,11 @@ jobs:
             docker rm -f backend-api || true
 
             # Lancer les containers
-            docker run -d --name react-frontend -p 80:80 react-frontend:${{ github.sha }}
+            docker run -d --name react-frontend -p 8080:80 react-frontend:${{ github.sha }}
             docker run -d --name backend-api -p 3000:3000 backend-api:${{ github.sha }}
+
+            # Redémarrer Nginx (reverse proxy sur port 80)
+            sudo systemctl restart nginx
 
   deploy-vm2:
     needs: build
@@ -125,5 +125,5 @@ jobs:
             docker rm -f backend-api || true
 
             # Lancer les containers
-            docker run -d --name react-frontend -p 80:80 react-frontend:${{ github.sha }}
+            docker run -d --name react-frontend -p 8080:80 react-frontend:${{ github.sha }}
             docker run -d --name backend-api -p 3000:3000 backend-api:${{ github.sha }}
