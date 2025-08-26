@@ -1,4 +1,4 @@
-name: CI/CD Pipeline
+name: Build and Deploy Fullstack App
 
 on:
   push:
@@ -10,77 +10,115 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
+      - name: Checkout repo
         uses: actions/checkout@v3
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: '18'
+      - name: Build React Frontend Docker image
+        run: docker build -t react-frontend:${{ github.sha }} .
+        working-directory: ./frontend
 
-      - name: Install dependencies
-        run: npm install
-        working-directory: frontend
+      - name: Build Backend API Docker image
+        run: docker build -t backend-api:${{ github.sha }} .
+        working-directory: ./backend
 
-      - name: Build React app
-        run: npm run build
-        working-directory: frontend
+      - name: Save and compress React Frontend image
+        run: |
+          docker save react-frontend:${{ github.sha }} -o react-frontend.tar
+          gzip react-frontend.tar
 
-      - name: Archive build output
-        run: tar -czf react-build.tar.gz -C frontend/build .
+      - name: Save and compress Backend API image
+        run: |
+          docker save backend-api:${{ github.sha }} -o backend-api.tar
+          gzip backend-api.tar
 
-      - name: Upload artifact
+      - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: react-build
-          path: react-build.tar.gz
+          name: docker-images
+          path: |
+            react-frontend.tar.gz
+            backend-api.tar.gz
 
   deploy-vm1:
     needs: build
     runs-on: ubuntu-latest
 
     steps:
-      - name: Download artifact
+      - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
-          name: react-build
+          name: docker-images
           path: .
 
-      - name: Copy build to VM1
+      - name: Copy Docker images to VM1
         uses: appleboy/scp-action@v0.1.4
         with:
           host: ${{ secrets.VM1_IP }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: react-build.tar.gz
-          target: ~/react-build.tar.gz
+          source: "*.tar.gz"
+          target: /home/${{ secrets.SSH_USER }}/
 
-      - name: Deploy on VM1
+      - name: Deploy containers on VM1
         uses: appleboy/ssh-action@v1.0.0
         with:
           host: ${{ secrets.VM1_IP }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            if [ ! -f ~/react-build.tar.gz ]; then
-              echo "Erreur : react-build.tar.gz non trouvé dans le home"
-              exit 1
-            fi
+            set -e
+            cd /home/${{ secrets.SSH_USER }}
 
-            mkdir -p ~/react-app/dist
+            # Charger les images
+            gunzip -c react-frontend.tar.gz | docker load
+            gunzip -c backend-api.tar.gz | docker load
 
-            tar -xzf ~/react-build.tar.gz -C ~/react-app/dist
+            # Supprimer anciens conteneurs si existent
+            docker rm -f react-frontend || true
+            docker rm -f backend-api || true
 
-            rm ~/react-build.tar.gz
+            # Lancer les containers
+            docker run -d --name react-frontend -p 80:80 react-frontend:${{ github.sha }}
+            docker run -d --name backend-api -p 3000:3000 backend-api:${{ github.sha }}
 
-            if ! command -v nginx &> /dev/null; then
-              echo "Nginx non trouvé, installation en cours..."
-              if [ -f /etc/debian_version ]; then
-                sudo apt-get update && sudo apt-get install -y nginx
-              else
-                sudo yum install -y nginx
-              fi
-              sudo systemctl enable nginx
-            fi
+  deploy-vm2:
+    needs: build
+    runs-on: ubuntu-latest
 
-            sudo systemctl restart nginx
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-images
+          path: .
+
+      - name: Copy Docker images to VM2
+        uses: appleboy/scp-action@v0.1.4
+        with:
+          host: ${{ secrets.VM2_IP }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: "*.tar.gz"
+          target: /home/${{ secrets.SSH_USER }}/
+
+      - name: Deploy containers on VM2
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.VM2_IP }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            set -e
+            cd /home/${{ secrets.SSH_USER }}
+
+            # Charger les images
+            gunzip -c react-frontend.tar.gz | docker load
+            gunzip -c backend-api.tar.gz | docker load
+
+            # Supprimer anciens conteneurs si existent
+            docker rm -f react-frontend || true
+            docker rm -f backend-api || true
+
+            # Lancer les containers
+            docker run -d --name react-frontend -p 80:80 react-frontend:${{ github.sha }}
+            docker run -d --name backend-api -p 3000:3000 backend-api:${{ github.sha }}
