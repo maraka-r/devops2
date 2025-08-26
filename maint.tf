@@ -69,9 +69,17 @@ resource "aws_security_group" "web_sg" {
   vpc_id = aws_vpc.main.id
 
   ingress {
-    description     = "HTTP depuis ALB"
-    from_port       = 80
-    to_port         = 80
+    description     = "Frontend 3000 depuis ALB"
+    from_port       = 3000
+    to_port         = 3000
+    protocol        = "tcp"
+    security_groups = [aws_security_group.alb_sg.id]
+  }
+
+  ingress {
+    description     = "Backend 8000 depuis ALB"
+    from_port       = 8000
+    to_port         = 8000
     protocol        = "tcp"
     security_groups = [aws_security_group.alb_sg.id]
   }
@@ -128,9 +136,20 @@ resource "aws_lb" "frontend_lb" {
 
 resource "aws_lb_target_group" "frontend_tg" {
   name     = "frontend-tg"
-  port     = 80
+  port     = 3000
   protocol = "HTTP"
   vpc_id   = aws_vpc.main.id
+
+  health_check {
+    path                = "/"
+    port                = "3000"
+    protocol            = "HTTP"
+    matcher             = "200"
+    interval            = 30
+    healthy_threshold   = 3
+    unhealthy_threshold = 2
+    timeout             = 5
+  }
 }
 
 resource "aws_lb_listener" "frontend_listener" {
@@ -148,7 +167,7 @@ resource "aws_lb_target_group_attachment" "frontend_attach" {
   count            = var.front_vm_count
   target_group_arn = aws_lb_target_group.frontend_tg.arn
   target_id        = aws_instance.frontend[count.index].id
-  port             = 80
+  port             = 3000
 }
 
 resource "aws_lb" "backend_lb" {
@@ -161,9 +180,20 @@ resource "aws_lb" "backend_lb" {
 
 resource "aws_lb_target_group" "backend_tg" {
   name     = "backend-tg"
-  port     = 80
+  port     = 8000
   protocol = "HTTP"
   vpc_id   = aws_vpc.main.id
+
+  health_check {
+    path                = "/"   # change en "/health" si ton API l’expose
+    port                = "8000"
+    protocol            = "HTTP"
+    matcher             = "200"
+    interval            = 30
+    healthy_threshold   = 3
+    unhealthy_threshold = 2
+    timeout             = 5
+  }
 }
 
 resource "aws_lb_listener" "backend_listener" {
@@ -181,7 +211,7 @@ resource "aws_lb_target_group_attachment" "backend_attach" {
   count            = var.back_vm_count
   target_group_arn = aws_lb_target_group.backend_tg.arn
   target_id        = aws_instance.backend[count.index].id
-  port             = 80
+  port             = 8000
 }
 
 # ----------------- Outputs -----------------

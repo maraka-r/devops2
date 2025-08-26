@@ -1,4 +1,5 @@
-name: Build and Deploy Fullstack App
+name: Build and Deploy Fullstack App (Multi-VM with Load Balancer)
+
 on:
   push:
     branches:
@@ -11,6 +12,7 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v3
 
+      # Build images
       - name: Build React Frontend Docker image
         run: docker build -t react-frontend:${{ github.sha }} .
         working-directory: ./frontend
@@ -19,6 +21,7 @@ jobs:
         run: docker build -t backend-api:${{ github.sha }} .
         working-directory: ./backend
 
+      # Save + compress
       - name: Save and compress React Frontend image
         run: |
           docker save react-frontend:${{ github.sha }} -o react-frontend.tar
@@ -29,6 +32,7 @@ jobs:
           docker save backend-api:${{ github.sha }} -o backend-api.tar
           gzip backend-api.tar
 
+      # Upload artifacts
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -37,45 +41,143 @@ jobs:
             react-frontend.tar.gz
             backend-api.tar.gz
 
-  deploy-vm1:
+  # -----------------------------
+  # Deploy Frontend VM1
+  # -----------------------------
+  deploy-frontend-vm1:
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - name: Download artifacts
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
           name: docker-images
           path: .
-
-      - name: Copy Docker images to VM1
-        uses: appleboy/scp-action@v0.1.4
+      - uses: appleboy/scp-action@v0.1.4
         with:
           host: ${{ secrets.VM1_IP }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: "react-frontend.tar.gz,backend-api.tar.gz"
+          source: "react-frontend.tar.gz"
           target: ~/
-
-      - name: Deploy containers on VM1
-        uses: appleboy/ssh-action@v1.0.0
+      - uses: appleboy/ssh-action@v1.0.0
         with:
           host: ${{ secrets.VM1_IP }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            # Load Docker images
             gunzip ~/react-frontend.tar.gz
-            gunzip ~/backend-api.tar.gz
             docker load -i ~/react-frontend.tar
+            docker stop react-frontend || true
+            docker rm react-frontend || true
+            docker run -d --name react-frontend -p 80:80 react-frontend:${{ github.sha }}
+            rm ~/react-frontend.tar
+
+  deploy-frontend-vm2:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: docker-images
+          path: .
+      - uses: appleboy/scp-action@v0.1.4
+        with:
+          host: ${{ secrets.VM2_IP }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: "react-frontend.tar.gz"
+          target: ~/
+      - uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.VM2_IP }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            gunzip ~/react-frontend.tar.gz
+            docker load -i ~/react-frontend.tar
+            docker stop react-frontend || true
+            docker rm react-frontend || true
+            docker run -d --name react-frontend -p 80:80 react-frontend:${{ github.sha }}
+            rm ~/react-frontend.tar
+
+  deploy-backend-vm3:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: docker-images
+          path: .
+      - uses: appleboy/scp-action@v0.1.4
+        with:
+          host: ${{ secrets.VM3_IP }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: "backend-api.tar.gz"
+          target: ~/
+      - uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.VM3_IP }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            gunzip ~/backend-api.tar.gz
             docker load -i ~/backend-api.tar
+            docker stop backend-api || true
+            docker rm backend-api || true
+            docker run -d --name backend-api -p 8000:3000 backend-api:${{ github.sha }}
+            rm ~/backend-api.tar
 
-            # Stop existing containers if running
-            docker stop react-frontend backend-api || true
-            docker rm react-frontend backend-api || true
+  deploy-backend-vm4:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: docker-images
+          path: .
+      - uses: appleboy/scp-action@v0.1.4
+        with:
+          host: ${{ secrets.VM4_IP }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: "backend-api.tar.gz"
+          target: ~/
+      - uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.VM4_IP }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            gunzip ~/backend-api.tar.gz
+            docker load -i ~/backend-api.tar
+            docker stop backend-api || true
+            docker rm backend-api || true
+            docker run -d --name backend-api -p 8000:3000 backend-api:${{ github.sha }}
+            rm ~/backend-api.tar
 
-            # Run new containers
-            docker run -d --name react-frontend -p 3000:80 react-frontend:${{ github.sha }}
-            docker run -d --name backend-api -p 8000:8000 backend-api:${{ github.sha }}
+  # -----------------------------
+  # Update AWS Load Balancers
+  # -----------------------------
+  update-loadbalancers:
+    needs: [deploy-frontend-vm1, deploy-frontend-vm2, deploy-backend-vm3, deploy-backend-vm4]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
 
-            # Clean up tar files
-            rm ~/react-frontend.tar ~/backend-api.tar
+      - name: Register frontend targets
+        run: |
+          aws elbv2 register-targets \
+            --target-group-arn ${{ secrets.FRONTEND_TG_ARN }} \
+            --targets Id=${{ secrets.VM1_IP }},Port=80 Id=${{ secrets.VM2_IP }},Port=80
+
+      - name: Register backend targets
+        run: |
+          aws elbv2 register-targets \
+            --target-group-arn ${{ secrets.BACKEND_TG_ARN }} \
+            --targets Id=${{ secrets.VM3_IP }},Port=8000 Id=${{ secrets.VM4_IP }},Port=8000
