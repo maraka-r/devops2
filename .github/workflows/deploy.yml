@@ -17,7 +17,7 @@ jobs:
         run: docker build -t react-frontend:${{ github.sha }} .
         working-directory: ./frontend
 
-      - name: Build Backend API Docker image
+      - name: Build Backend API Docker  image
         run: docker build -t backend-api:${{ github.sha }} .
         working-directory: ./backend
 
