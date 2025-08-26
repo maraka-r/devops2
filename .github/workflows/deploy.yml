@@ -63,24 +63,22 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            # Load Docker images
+            # Nettoyage des anciens conteneurs et images
+            docker ps -aq | xargs -r docker stop
+            docker ps -aq | xargs -r docker rm
+            docker images -q | xargs -r docker rmi -f
+            docker volume prune -f
+            docker network prune -f
+
+            # Charger les nouvelles images
             gunzip ~/react-frontend.tar.gz
             gunzip ~/backend-api.tar.gz
             docker load -i ~/react-frontend.tar
             docker load -i ~/backend-api.tar
 
-            # Stop existing containers if running
-            docker stop react-frontend backend-api || true
-            docker rm react-frontend backend-api || true
+            # Lancer les nouveaux conteneurs
+            docker run -d --name react-frontend -p 80:80 react-frontend:${{ github.sha }}
+            docker run -d --name backend-api -p 8000:3000 backend-api:${{ github.sha }}
 
-            # Create network if not exists
-            docker network create myapp-network || true
-
-            # Run backend (only inside network, not exposed publicly)
-            docker run -d --name backend-api --network myapp-network backend-api:${{ github.sha }}
-
-            # Run frontend (exposed on port 80, reverse proxy to backend)
-            docker run -d --name react-frontend --network myapp-network -p 80:80 react-frontend:${{ github.sha }}
-
-            # Clean up tar files
+            # Nettoyage des tar
             rm ~/react-frontend.tar ~/backend-api.tar
