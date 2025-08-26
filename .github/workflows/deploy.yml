@@ -73,9 +73,14 @@ jobs:
             docker stop react-frontend backend-api || true
             docker rm react-frontend backend-api || true
 
-            # Run new containers
-            docker run -d --name react-frontend -p 3000:80 react-frontend:${{ github.sha }}
-            docker run -d --name backend-api -p 8000:8000 backend-api:${{ github.sha }}
+            # Create network if not exists
+            docker network create myapp-network || true
+
+            # Run backend (only inside network, not exposed publicly)
+            docker run -d --name backend-api --network myapp-network backend-api:${{ github.sha }}
+
+            # Run frontend (exposed on port 80, reverse proxy to backend)
+            docker run -d --name react-frontend --network myapp-network -p 80:80 react-frontend:${{ github.sha }}
 
             # Clean up tar files
             rm ~/react-frontend.tar ~/backend-api.tar

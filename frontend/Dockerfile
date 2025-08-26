@@ -1,4 +1,8 @@
 # Étape 1 : Build de l'application React
+FROM nginx:alpine
+
+COPY build/ /usr/share/nginx/html
+COPY nginx.conf /etc/nginx/conf.d/default.conf
 FROM node:18-alpine AS build
 
 # Définir le répertoire de travail
