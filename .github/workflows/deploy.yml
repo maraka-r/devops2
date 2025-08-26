@@ -17,7 +17,7 @@ jobs:
         run: docker build -t react-frontend:${{ github.sha }} .
         working-directory: ./frontend
 
-      - name: Build Backend API Docker  image
+      - name: Build Backend API Docker image
         run: docker build -t backend-api:${{ github.sha }} .
         working-directory: ./backend
 
@@ -56,9 +56,8 @@ jobs:
           host: ${{ secrets.VM1_IP }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: react-build.tar.gz
-          target: ~/
-         
+          source: "*.tar.gz"
+          target: /home/${{ secrets.SSH_USER }}/
 
       - name: Deploy containers on VM1
         uses: appleboy/ssh-action@v1.0.0
@@ -67,10 +66,6 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-           mkdir -p ~/react-app/dist
-           tar -xzf ~/react-build.tar.gz -C ~/react-app/dist
-           rm ~/react-build.tar.gz
-           sudo systemctl restart nginx
             set -e
             cd /home/${{ secrets.SSH_USER }}
 
