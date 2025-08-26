@@ -159,6 +159,7 @@ jobs:
   # -----------------------------
   # Update AWS Load Balancers
   # -----------------------------
+  
   update-loadbalancers:
     needs: [deploy-frontend-vm1, deploy-frontend-vm2, deploy-backend-vm3, deploy-backend-vm4]
     runs-on: ubuntu-latest
@@ -174,12 +175,10 @@ jobs:
         run: |
           aws elbv2 register-targets \
             --target-group-arn ${{ secrets.FRONTEND_TG_ARN }} \
-            --targets Id=${{ secrets.VM1_ID }},Port=80 \
-                      Id=${{ secrets.VM2_ID }},Port=80
+            --targets "Id=${{ secrets.VM1_ID }},Port=80" "Id=${{ secrets.VM2_ID }},Port=80"
 
       - name: Register backend targets
         run: |
           aws elbv2 register-targets \
             --target-group-arn ${{ secrets.BACKEND_TG_ARN }} \
-            --targets Id=${{ secrets.VM3_ID }},Port=8000 \
-                      Id=${{ secrets.VM4_ID }},Port=8000
+            --targets "Id=${{ secrets.VM3_ID }},Port=8000" "Id=${{ secrets.VM4_ID }},Port=8000"
