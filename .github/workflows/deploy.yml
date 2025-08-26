@@ -1,4 +1,4 @@
-name: CI/CD Pipeline
+name: CI/CD
 
 on:
   push:
@@ -8,101 +8,84 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
-      # ==== BACKEND BUILD ====
-      - name: Build backend Docker image
+      # ---- FRONTEND ----
+      - name: Build React frontend
+        working-directory: ./frontend
         run: |
-          cd backend
-          docker build -t backend-api:test .
-
-      - name: Save backend image as artifact
-        run: |
-          docker save backend-api:test -o backend-api.tar
-        shell: bash
-
-      - name: Upload backend artifact
-        uses: actions/upload-artifact@v3
-        with:
-          name: backend-api
-          path: backend-api.tar
-
-      # ==== FRONTEND BUILD ====
-      - name: Build frontend
-        run: |
-          cd frontend
           npm install
           npm run build
-          tar -czf react-build.tar.gz build
+          tar -czf react-frontend.tar.gz build
 
       - name: Upload frontend artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: react-build
-          path: frontend/react-build.tar.gz
+          name: react-frontend
+          path: frontend/react-frontend.tar.gz
+
+      # ---- BACKEND ----
+      - name: Build backend
+        working-directory: ./backend
+        run: |
+          docker build -t backend-api .
+          docker save backend-api -o backend-api.tar.gz
+
+      - name: Upload backend artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-api
+          path: backend/backend-api.tar.gz
 
   deploy:
     runs-on: ubuntu-latest
     needs: build
+
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ---- DOWNLOAD ARTIFACTS ----
+      - name: Download frontend artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: react-frontend
+          path: .
+
       - name: Download backend artifact
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: backend-api
           path: .
 
-      - name: Download frontend artifact
-        uses: actions/download-artifact@v3
-        with:
-          name: react-build
-          path: .
-
-      # === DEBUG STEP (juste avant SCP) ===
-      - name: Debug before SCP
+      # ---- DEBUG AVANT SCP ----
+      - name: List files before SCP
         run: ls -lh
 
-      # ==== DEPLOY BACKEND ====
-      - name: Copy backend image to VM
+      # ---- DEPLOY AVEC SCP ----
+      - name: Copy files via SCP
         uses: appleboy/scp-action@v0.1.4
         with:
-          host: ${{ secrets.VM_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: backend-api.tar
-          target: ~/
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          source: |
+            react-frontend.tar.gz
+            backend-api.tar.gz
+          target: /home/${{ secrets.SERVER_USER }}/deploy
 
-      - name: Load and run backend container on VM
-        uses: appleboy/ssh-action@v1.0.0
+      # ---- COMMANDES SUR LE SERVEUR ----
+      - name: Deploy on server
+        uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ secrets.VM_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
           script: |
-            docker load -i ~/backend-api.tar
-            docker stop backend-api || true
-            docker rm backend-api || true
-            docker run -d --name backend-api -p 3000:3000 backend-api:test
-
-      # ==== DEPLOY FRONTEND ====
-      - name: Copy frontend build to VM
-        uses: appleboy/scp-action@v0.1.4
-        with:
-          host: ${{ secrets.VM_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: react-build.tar.gz
-          target: ~/
-
-      - name: Extract and serve frontend on VM
-        uses: appleboy/ssh-action@v1.0.0
-        with:
-          host: ${{ secrets.VM_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          script: |
-            mkdir -p ~/react-app/dist
-            tar -xzf ~/react-build.tar.gz -C ~/react-app/dist
-            rm ~/react-build.tar.gz
-            sudo systemctl restart nginx
+            cd /home/${{ secrets.SERVER_USER }}/deploy
+            docker load -i backend-api.tar.gz
+            tar -xzf react-frontend.tar.gz -C /var/www/html
+            docker compose -f docker-compose.prod.yml up -d --force-recreate
