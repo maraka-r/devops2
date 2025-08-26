@@ -50,6 +50,9 @@ jobs:
           name: docker-images
           path: .
 
+      - name: Debug check files
+        run: ls -lh .
+
       - name: Copy Docker images to VM1
         uses: appleboy/scp-action@v0.1.4
         with:
@@ -57,8 +60,8 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           source: |
-            react-frontend.tar.gz
-            backend-api.tar.gz
+            ./react-frontend.tar.gz
+            ./backend-api.tar.gz
           target: /home/${{ secrets.SSH_USER }}/
 
       - name: Deploy containers on VM1
@@ -83,9 +86,6 @@ jobs:
             docker run -d --name react-frontend -p 8080:80 react-frontend:${{ github.sha }}
             docker run -d --name backend-api -p 3000:3000 backend-api:${{ github.sha }}
 
-            # Redémarrer Nginx (reverse proxy sur port 80)
-            sudo systemctl restart nginx
-
   deploy-vm2:
     needs: build
     runs-on: ubuntu-latest
@@ -97,13 +97,18 @@ jobs:
           name: docker-images
           path: .
 
+      - name: Debug check files
+        run: ls -lh .
+
       - name: Copy Docker images to VM2
         uses: appleboy/scp-action@v0.1.4
         with:
           host: ${{ secrets.VM2_IP }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: "*.tar.gz"
+          source: |
+            ./react-frontend.tar.gz
+            ./backend-api.tar.gz
           target: /home/${{ secrets.SSH_USER }}/
 
       - name: Deploy containers on VM2
