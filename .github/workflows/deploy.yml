@@ -50,8 +50,7 @@ jobs:
   # -------------------------
   deploy-frontend-vm1:
     needs: build
-    runs-on: self-hosted
-    labels: [frontend-vm1]
+    runs-on: [self-hosted, frontend-vm1]
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -65,12 +64,11 @@ jobs:
           docker rm react-frontend || true
           docker run -d --name react-frontend -p 80:80 react-frontend:${{ github.sha }}
           docker image prune -af
-          rm react-frontend.tar
+          rm react-frontend.tar react-frontend.tar.gz
 
   deploy-frontend-vm2:
     needs: build
-    runs-on: self-hosted
-    labels: [frontend-vm2]
+    runs-on: [self-hosted, frontend-vm2]
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -84,15 +82,14 @@ jobs:
           docker rm react-frontend || true
           docker run -d --name react-frontend -p 80:80 react-frontend:${{ github.sha }}
           docker image prune -af
-          rm react-frontend.tar
+          rm react-frontend.tar react-frontend.tar.gz
 
   # -------------------------
   # DEPLOY BACKEND (VM3 + VM4)
   # -------------------------
   deploy-backend-vm3:
     needs: build
-    runs-on: self-hosted
-    labels: [backend-vm3]
+    runs-on: [self-hosted, backend-vm3]
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -104,14 +101,13 @@ jobs:
           docker load -i backend-api.tar
           docker stop backend-api || true
           docker rm backend-api || true
-          docker run -d --name backend-api -p 8000:3000 backend-api:${{ github.sha }}
+          docker run -d --name backend-api -p 8000:8000 backend-api:${{ github.sha }}
           docker image prune -af
-          rm backend-api.tar
+          rm backend-api.tar backend-api.tar.gz
 
   deploy-backend-vm4:
     needs: build
-    runs-on: self-hosted
-    labels: [backend-vm4]
+    runs-on: [self-hosted, backend-vm4]
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -123,9 +119,9 @@ jobs:
           docker load -i backend-api.tar
           docker stop backend-api || true
           docker rm backend-api || true
-          docker run -d --name backend-api -p 8000:3000 backend-api:${{ github.sha }}
+          docker run -d --name backend-api -p 8000:8000 backend-api:${{ github.sha }}
           docker image prune -af
-          rm backend-api.tar
+          rm backend-api.tar backend-api.tar.gz
 
   # -------------------------
   # UPDATE LOAD BALANCERS
@@ -141,11 +137,23 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
+      - name: Deregister old frontend targets
+        run: |
+          aws elbv2 deregister-targets \
+            --target-group-arn ${{ secrets.FRONTEND_TG_ARN }} \
+            --targets "Id=${{ secrets.VM1_ID }}" "Id=${{ secrets.VM2_ID }}"
+
       - name: Register frontend targets
         run: |
           aws elbv2 register-targets \
             --target-group-arn ${{ secrets.FRONTEND_TG_ARN }} \
             --targets "Id=${{ secrets.VM1_ID }},Port=80" "Id=${{ secrets.VM2_ID }},Port=80"
+
+      - name: Deregister old backend targets
+        run: |
+          aws elbv2 deregister-targets \
+            --target-group-arn ${{ secrets.BACKEND_TG_ARN }} \
+            --targets "Id=${{ secrets.VM3_ID }}" "Id=${{ secrets.VM4_ID }}"
 
       - name: Register backend targets
         run: |
