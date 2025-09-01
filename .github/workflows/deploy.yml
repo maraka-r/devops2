@@ -63,7 +63,7 @@ jobs:
           docker stop react-frontend || true
           docker rm react-frontend || true
           docker run -d --name react-frontend -p 80:80 react-frontend:${{ github.sha }}
-          docker image prune -af
+          docker image prune -af 
           rm react-frontend.tar
 
   deploy-frontend-vm2:
@@ -126,6 +126,7 @@ jobs:
   # -------------------------
   # UPDATE LOAD BALANCERS
   # -------------------------
+
   update-loadbalancers:
     needs: [deploy-frontend-vm1, deploy-frontend-vm2, deploy-backend-vm3, deploy-backend-vm4]
     runs-on: ubuntu-latest
