@@ -85,11 +85,11 @@ jobs:
           rm -f react-frontend.tar
 
   # -------------------------
-  # DEPLOY BACKEND (VM3 + VM4)
+  # DEPLOY BACKEND (VM1 + VM2)
   # -------------------------
-  deploy-backend-vm3:
+  deploy-backend-vm1:
     needs: build
-    runs-on: [self-hosted, backend-vm3]
+    runs-on: [self-hosted, backend-vm1]
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -105,9 +105,9 @@ jobs:
           docker image prune -af
           rm -f backend-api.tar
 
-  deploy-backend-vm4:
+  deploy-backend-vm2:
     needs: build
-    runs-on: [self-hosted, backend-vm4]
+    runs-on: [self-hosted, backend-vm2]
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -127,7 +127,7 @@ jobs:
   # UPDATE LOAD BALANCERS
   # -------------------------
   update-loadbalancers:
-    needs: [deploy-frontend-vm1, deploy-frontend-vm2, deploy-backend-vm3, deploy-backend-vm4]
+    needs: [deploy-frontend-vm1, deploy-frontend-vm2, deploy-backend-vm1, deploy-backend-vm2]
     runs-on: ubuntu-latest
     steps:
       - name: Configure AWS credentials
