@@ -1,3 +1,4 @@
+
 # Région AWS
 variable "region" {
   description = "AWS region"
@@ -12,25 +13,11 @@ variable "instance_type" {
   default     = "t3.micro"
 }
 
-# AMI ID
-variable "ami_id" {
-  description = "AMI utilisée pour les instances EC2"
-  type        = string
-  default     = "ami-0261b3cfb46ba75aa"
-}
-
 # Clé SSH pour EC2
 variable "ssh_key_name" {
-  description = "devops2"
+  description = "Clé SSH utilisée pour se connecter"
   type        = string
   default     = "devops2"
-}
-
-# Chemin vers la clé publique SSH locale (optionnel si tu veux importer la clé)
-variable "ssh_public_key_path" {
-  description = "C:/Users/laoua/.ssh"
-  type        = string
-  default     = "~/.ssh/devops2.pub"
 }
 
 # CIDR autorisé pour SSH
@@ -79,11 +66,4 @@ variable "project_name" {
   description = "Nom du projet pour les tags AWS"
   type        = string
   default     = "AWS-IaC-React-Monitoring"
-}
-
-# Security Group des ALB (sera utilisé par le SG des instances front/back)
-variable "alb_sg_id" {
-  description = "ID du security group pour les ALB"
-  type        = string
-  default     = ""
 }

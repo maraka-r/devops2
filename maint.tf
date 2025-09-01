@@ -2,6 +2,22 @@ provider "aws" {
   region = var.region
 }
 
+# ----------------- AMI Ubuntu 22.04 -----------------
+data "aws_ami" "ubuntu" {
+  most_recent = true
+  owners      = ["099720109477"] # Canonical
+
+  filter {
+    name   = "name"
+    values = ["ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*"]
+  }
+
+  filter {
+    name   = "virtualization-type"
+    values = ["hvm"]
+  }
+}
+
 # ----------------- VPC & Subnets -----------------
 resource "aws_vpc" "main" {
   cidr_block = var.vpc_cidr
@@ -101,28 +117,88 @@ resource "aws_security_group" "web_sg" {
 }
 
 # ----------------- EC2 Instances -----------------
-resource "aws_instance" "frontend" {
-  count         = var.front_vm_count
-  ami           = var.ami_id
-  instance_type = var.instance_type
-  key_name      = var.ssh_key_name
-  subnet_id     = element([aws_subnet.subnet_a.id, aws_subnet.subnet_b.id], count.index)
-  security_groups = [aws_security_group.web_sg.id]
+resource "aws_instance" "frontend_vm1" {
+  ami                    = data.aws_ami.ubuntu.id
+  instance_type          = var.instance_type
+  key_name               = var.ssh_key_name
+  subnet_id              = aws_subnet.subnet_a.id
+  vpc_security_group_ids = [aws_security_group.web_sg.id]
+
   tags = {
-    Name = "frontend-${count.index + 1}"
+    Name = "${var.project_name}-frontend-vm1"
   }
+
+  user_data = <<-EOF
+    #!/bin/bash
+    apt-get update -y
+    apt-get upgrade -y
+    apt-get install -y docker.io curl
+    systemctl enable docker
+    systemctl start docker
+  EOF
 }
 
-resource "aws_instance" "backend" {
-  count         = var.back_vm_count
-  ami           = var.ami_id
-  instance_type = var.instance_type
-  key_name      = var.ssh_key_name
-  subnet_id     = element([aws_subnet.subnet_a.id, aws_subnet.subnet_b.id], count.index)
-  security_groups = [aws_security_group.web_sg.id]
+resource "aws_instance" "frontend_vm2" {
+  ami                    = data.aws_ami.ubuntu.id
+  instance_type          = var.instance_type
+  key_name               = var.ssh_key_name
+  subnet_id              = aws_subnet.subnet_a.id
+  vpc_security_group_ids = [aws_security_group.web_sg.id]
+
   tags = {
-    Name = "backend-${count.index + 1}"
+    Name = "${var.project_name}-frontend-vm2"
   }
+
+  user_data = <<-EOF
+    #!/bin/bash
+    apt-get update -y
+    apt-get upgrade -y
+    apt-get install -y docker.io curl
+    systemctl enable docker
+    systemctl start docker
+  EOF
+}
+
+resource "aws_instance" "backend_vm1" {
+  ami                    = data.aws_ami.ubuntu.id
+  instance_type          = var.instance_type
+  key_name               = var.ssh_key_name
+  subnet_id              = aws_subnet.subnet_a.id
+  vpc_security_group_ids = [aws_security_group.web_sg.id]
+
+  tags = {
+    Name = "${var.project_name}-backend-vm1"
+  }
+
+  user_data = <<-EOF
+    #!/bin/bash
+    apt-get update -y
+    apt-get upgrade -y
+    apt-get install -y docker.io curl
+    systemctl enable docker
+    systemctl start docker
+  EOF
+}
+
+resource "aws_instance" "backend_vm2" {
+  ami                    = data.aws_ami.ubuntu.id
+  instance_type          = var.instance_type
+  key_name               = var.ssh_key_name
+  subnet_id              = aws_subnet.subnet_a.id
+  vpc_security_group_ids = [aws_security_group.web_sg.id]
+
+  tags = {
+    Name = "${var.project_name}-backend-vm2"
+  }
+
+  user_data = <<-EOF
+    #!/bin/bash
+    apt-get update -y
+    apt-get upgrade -y
+    apt-get install -y docker.io curl
+    systemctl enable docker
+    systemctl start docker
+  EOF
 }
 
 # ----------------- Load Balancers -----------------
@@ -163,10 +239,15 @@ resource "aws_lb_listener" "frontend_listener" {
   }
 }
 
-resource "aws_lb_target_group_attachment" "frontend_attach" {
-  count            = var.front_vm_count
+resource "aws_lb_target_group_attachment" "frontend_vm1_attach" {
   target_group_arn = aws_lb_target_group.frontend_tg.arn
-  target_id        = aws_instance.frontend[count.index].id
+  target_id        = aws_instance.frontend_vm1.id
+  port             = 3000
+}
+
+resource "aws_lb_target_group_attachment" "frontend_vm2_attach" {
+  target_group_arn = aws_lb_target_group.frontend_tg.arn
+  target_id        = aws_instance.frontend_vm2.id
   port             = 3000
 }
 
@@ -185,7 +266,7 @@ resource "aws_lb_target_group" "backend_tg" {
   vpc_id   = aws_vpc.main.id
 
   health_check {
-    path                = "/"   # change en "/health" si ton API l’expose
+    path                = "/"   # change si ton API a /health
     port                = "8000"
     protocol            = "HTTP"
     matcher             = "200"
@@ -207,10 +288,15 @@ resource "aws_lb_listener" "backend_listener" {
   }
 }
 
-resource "aws_lb_target_group_attachment" "backend_attach" {
-  count            = var.back_vm_count
+resource "aws_lb_target_group_attachment" "backend_vm1_attach" {
   target_group_arn = aws_lb_target_group.backend_tg.arn
-  target_id        = aws_instance.backend[count.index].id
+  target_id        = aws_instance.backend_vm1.id
+  port             = 8000
+}
+
+resource "aws_lb_target_group_attachment" "backend_vm2_attach" {
+  target_group_arn = aws_lb_target_group.backend_tg.arn
+  target_id        = aws_instance.backend_vm2.id
   port             = 8000
 }
 
