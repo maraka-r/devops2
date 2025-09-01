@@ -29,12 +29,12 @@ jobs:
       - name: Save and compress React Frontend
         run: |
           docker save react-frontend:${{ github.sha }} -o react-frontend.tar
-          gzip react-frontend.tar
+          gzip -f react-frontend.tar
 
       - name: Save and compress Backend API
         run: |
           docker save backend-api:${{ github.sha }} -o backend-api.tar
-          gzip backend-api.tar
+          gzip -f backend-api.tar
 
       # Upload
       - name: Upload Docker images
@@ -58,13 +58,13 @@ jobs:
           path: .
       - name: Load and run React Frontend
         run: |
-          gunzip react-frontend.tar.gz
+          gunzip -f react-frontend.tar.gz
           docker load -i react-frontend.tar
           docker stop react-frontend || true
           docker rm react-frontend || true
           docker run -d --name react-frontend -p 80:80 react-frontend:${{ github.sha }}
-          docker image prune -af 
-          rm react-frontend.tar
+          docker image prune -af
+          rm -f react-frontend.tar
 
   deploy-frontend-vm2:
     needs: build
@@ -76,13 +76,13 @@ jobs:
           path: .
       - name: Load and run React Frontend
         run: |
-          gunzip react-frontend.tar.gz
+          gunzip -f react-frontend.tar.gz
           docker load -i react-frontend.tar
           docker stop react-frontend || true
           docker rm react-frontend || true
           docker run -d --name react-frontend -p 80:80 react-frontend:${{ github.sha }}
           docker image prune -af
-          rm react-frontend.tar
+          rm -f react-frontend.tar
 
   # -------------------------
   # DEPLOY BACKEND (VM3 + VM4)
@@ -97,13 +97,13 @@ jobs:
           path: .
       - name: Load and run Backend API
         run: |
-          gunzip backend-api.tar.gz
+          gunzip -f backend-api.tar.gz
           docker load -i backend-api.tar
           docker stop backend-api || true
           docker rm backend-api || true
           docker run -d --name backend-api -p 8000:3000 backend-api:${{ github.sha }}
           docker image prune -af
-          rm backend-api.tar
+          rm -f backend-api.tar
 
   deploy-backend-vm4:
     needs: build
@@ -115,18 +115,17 @@ jobs:
           path: .
       - name: Load and run Backend API
         run: |
-          gunzip backend-api.tar.gz
+          gunzip -f backend-api.tar.gz
           docker load -i backend-api.tar
           docker stop backend-api || true
           docker rm backend-api || true
           docker run -d --name backend-api -p 8000:3000 backend-api:${{ github.sha }}
           docker image prune -af
-          rm backend-api.tar
+          rm -f backend-api.tar
 
   # -------------------------
   # UPDATE LOAD BALANCERS
   # -------------------------
-
   update-loadbalancers:
     needs: [deploy-frontend-vm1, deploy-frontend-vm2, deploy-backend-vm3, deploy-backend-vm4]
     runs-on: ubuntu-latest
