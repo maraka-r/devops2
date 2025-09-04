@@ -1,16 +1,15 @@
-const express = require("express");
+const express = require('express');
+const cors = require('cors');
+
 const app = express();
-const PORT = process.env.PORT || 3000;
 
-app.get("/", (req, res) => {
-  res.send("Hello World from Backend API 🚀");
+app.use(cors());
+
+app.get('/api/hello', (req, res) => {
+  res.json({ message: "Bienvenue sur l’API backend 🚀" });
 });
 
-// endpoint healthcheck (utile pour le load balancer et Prometheus)
-app.get("/health", (req, res) => {
-  res.json({ status: "ok" });
-});
-
+const PORT = process.env.PORT || 8000;
 app.listen(PORT, () => {
-  console.log(`Backend API running on port ${PORT}`);
+  console.log(`✅ Backend API is running at http://localhost:${PORT}`);
 });
