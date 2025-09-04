@@ -1,69 +1,20 @@
 provider "aws" {
-  region = var.region
+  region = "eu-west-3" # Paris
 }
 
-# ----------------- AMI Ubuntu 22.04 -----------------
-data "aws_ami" "ubuntu" {
-  most_recent = true
-  owners      = ["099720109477"] # Canonical
+# ------------------------
+# Security Group
+# ------------------------
+resource "aws_security_group" "app_sg" {
+  name        = "app-sg"
+  description = "Allow HTTP, SSH, Backend"
 
-  filter {
-    name   = "name"
-    values = ["ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*"]
+  ingress {
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"] # ⚠️ limite à ton IP en prod
   }
-
-  filter {
-    name   = "virtualization-type"
-    values = ["hvm"]
-  }
-}
-
-# ----------------- VPC & Subnets -----------------
-resource "aws_vpc" "main" {
-  cidr_block = var.vpc_cidr
-}
-
-resource "aws_subnet" "subnet_a" {
-  vpc_id                  = aws_vpc.main.id
-  cidr_block              = var.subnet_a_cidr
-  availability_zone       = "${var.region}a"
-  map_public_ip_on_launch = true
-}
-
-resource "aws_subnet" "subnet_b" {
-  vpc_id                  = aws_vpc.main.id
-  cidr_block              = var.subnet_b_cidr
-  availability_zone       = "${var.region}b"
-  map_public_ip_on_launch = true
-}
-
-resource "aws_internet_gateway" "igw" {
-  vpc_id = aws_vpc.main.id
-}
-
-resource "aws_route_table" "route_table" {
-  vpc_id = aws_vpc.main.id
-
-  route {
-    cidr_block = "0.0.0.0/0"
-    gateway_id = aws_internet_gateway.igw.id
-  }
-}
-
-resource "aws_route_table_association" "subnet_a_assoc" {
-  subnet_id      = aws_subnet.subnet_a.id
-  route_table_id = aws_route_table.route_table.id
-}
-
-resource "aws_route_table_association" "subnet_b_assoc" {
-  subnet_id      = aws_subnet.subnet_b.id
-  route_table_id = aws_route_table.route_table.id
-}
-
-# ----------------- Security Groups -----------------
-resource "aws_security_group" "alb_sg" {
-  name   = "${var.project_name}-alb-sg"
-  vpc_id = aws_vpc.main.id
 
   ingress {
     from_port   = 80
@@ -72,40 +23,11 @@ resource "aws_security_group" "alb_sg" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-}
-
-resource "aws_security_group" "web_sg" {
-  name   = "${var.project_name}-web-sg"
-  vpc_id = aws_vpc.main.id
-
   ingress {
-    description     = "Frontend 3000 depuis ALB"
-    from_port       = 3000
-    to_port         = 3000
-    protocol        = "tcp"
-    security_groups = [aws_security_group.alb_sg.id]
-  }
-
-  ingress {
-    description     = "Backend 8000 depuis ALB"
-    from_port       = 8000
-    to_port         = 8000
-    protocol        = "tcp"
-    security_groups = [aws_security_group.alb_sg.id]
-  }
-
-  ingress {
-    description = "SSH depuis IP admin"
-    from_port   = 22
-    to_port     = 22
+    from_port   = 8000
+    to_port     = 8000
     protocol    = "tcp"
-    cidr_blocks = [var.ssh_allowed_cidr]
+    cidr_blocks = ["0.0.0.0/0"]
   }
 
   egress {
@@ -116,195 +38,32 @@ resource "aws_security_group" "web_sg" {
   }
 }
 
-# ----------------- EC2 Instances -----------------
-resource "aws_instance" "frontend_vm1" {
-  ami                    = data.aws_ami.ubuntu.id
-  instance_type          = var.instance_type
-  key_name               = var.ssh_key_name
-  subnet_id              = aws_subnet.subnet_a.id
-  vpc_security_group_ids = [aws_security_group.web_sg.id]
+# ------------------------
+# EC2 Instance
+# ------------------------
+resource "aws_instance" "app_vm" {
+  ami           = "ami-045a8ab02aadf4f88" # Ubuntu 22.04 LTS (Paris eu-west-3)
+  instance_type = "t2.micro"             # Free Tier (1 vCPU)
+  key_name      = "devops2"              # réutilisation de la clé existante
+  vpc_security_group_ids = [aws_security_group.app_sg.id]
 
   tags = {
-    Name = "${var.project_name}-frontend-vm1"
+    Name = "fullstack-app"
   }
 
   user_data = <<-EOF
     #!/bin/bash
     apt-get update -y
-    apt-get upgrade -y
-    apt-get install -y docker.io curl
+    apt-get install -y docker.io docker-compose
     systemctl enable docker
     systemctl start docker
+    usermod -aG docker ubuntu
   EOF
 }
 
-resource "aws_instance" "frontend_vm2" {
-  ami                    = data.aws_ami.ubuntu.id
-  instance_type          = var.instance_type
-  key_name               = var.ssh_key_name
-  subnet_id              = aws_subnet.subnet_a.id
-  vpc_security_group_ids = [aws_security_group.web_sg.id]
-
-  tags = {
-    Name = "${var.project_name}-frontend-vm2"
-  }
-
-  user_data = <<-EOF
-    #!/bin/bash
-    apt-get update -y
-    apt-get upgrade -y
-    apt-get install -y docker.io curl
-    systemctl enable docker
-    systemctl start docker
-  EOF
-}
-
-resource "aws_instance" "backend_vm1" {
-  ami                    = data.aws_ami.ubuntu.id
-  instance_type          = var.instance_type
-  key_name               = var.ssh_key_name
-  subnet_id              = aws_subnet.subnet_a.id
-  vpc_security_group_ids = [aws_security_group.web_sg.id]
-
-  tags = {
-    Name = "${var.project_name}-backend-vm1"
-  }
-
-  user_data = <<-EOF
-    #!/bin/bash
-    apt-get update -y
-    apt-get upgrade -y
-    apt-get install -y docker.io curl
-    systemctl enable docker
-    systemctl start docker
-  EOF
-}
-
-resource "aws_instance" "backend_vm2" {
-  ami                    = data.aws_ami.ubuntu.id
-  instance_type          = var.instance_type
-  key_name               = var.ssh_key_name
-  subnet_id              = aws_subnet.subnet_a.id
-  vpc_security_group_ids = [aws_security_group.web_sg.id]
-
-  tags = {
-    Name = "${var.project_name}-backend-vm2"
-  }
-
-  user_data = <<-EOF
-    #!/bin/bash
-    apt-get update -y
-    apt-get upgrade -y
-    apt-get install -y docker.io curl
-    systemctl enable docker
-    systemctl start docker
-  EOF
-}
-
-# ----------------- Load Balancers -----------------
-resource "aws_lb" "frontend_lb" {
-  name               = "frontend-lb"
-  internal           = false
-  load_balancer_type = "application"
-  security_groups    = [aws_security_group.alb_sg.id]
-  subnets            = [aws_subnet.subnet_a.id, aws_subnet.subnet_b.id]
-}
-
-resource "aws_lb_target_group" "frontend_tg" {
-  name     = "frontend-tg"
-  port     = 3000
-  protocol = "HTTP"
-  vpc_id   = aws_vpc.main.id
-
-  health_check {
-    path                = "/"
-    port                = "3000"
-    protocol            = "HTTP"
-    matcher             = "200"
-    interval            = 30
-    healthy_threshold   = 3
-    unhealthy_threshold = 2
-    timeout             = 5
-  }
-}
-
-resource "aws_lb_listener" "frontend_listener" {
-  load_balancer_arn = aws_lb.frontend_lb.arn
-  port              = 80
-  protocol          = "HTTP"
-
-  default_action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.frontend_tg.arn
-  }
-}
-
-resource "aws_lb_target_group_attachment" "frontend_vm1_attach" {
-  target_group_arn = aws_lb_target_group.frontend_tg.arn
-  target_id        = aws_instance.frontend_vm1.id
-  port             = 3000
-}
-
-resource "aws_lb_target_group_attachment" "frontend_vm2_attach" {
-  target_group_arn = aws_lb_target_group.frontend_tg.arn
-  target_id        = aws_instance.frontend_vm2.id
-  port             = 3000
-}
-
-resource "aws_lb" "backend_lb" {
-  name               = "backend-lb"
-  internal           = false
-  load_balancer_type = "application"
-  security_groups    = [aws_security_group.alb_sg.id]
-  subnets            = [aws_subnet.subnet_a.id, aws_subnet.subnet_b.id]
-}
-
-resource "aws_lb_target_group" "backend_tg" {
-  name     = "backend-tg"
-  port     = 8000
-  protocol = "HTTP"
-  vpc_id   = aws_vpc.main.id
-
-  health_check {
-    path                = "/"   # change si ton API a /health
-    port                = "8000"
-    protocol            = "HTTP"
-    matcher             = "200"
-    interval            = 30
-    healthy_threshold   = 3
-    unhealthy_threshold = 2
-    timeout             = 5
-  }
-}
-
-resource "aws_lb_listener" "backend_listener" {
-  load_balancer_arn = aws_lb.backend_lb.arn
-  port              = 80
-  protocol          = "HTTP"
-
-  default_action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.backend_tg.arn
-  }
-}
-
-resource "aws_lb_target_group_attachment" "backend_vm1_attach" {
-  target_group_arn = aws_lb_target_group.backend_tg.arn
-  target_id        = aws_instance.backend_vm1.id
-  port             = 8000
-}
-
-resource "aws_lb_target_group_attachment" "backend_vm2_attach" {
-  target_group_arn = aws_lb_target_group.backend_tg.arn
-  target_id        = aws_instance.backend_vm2.id
-  port             = 8000
-}
-
-# ----------------- Outputs -----------------
-output "frontend_lb_dns" {
-  value = aws_lb.frontend_lb.dns_name
-}
-
-output "backend_lb_dns" {
-  value = aws_lb.backend_lb.dns_name
+# ------------------------
+# Outputs
+# ------------------------
+output "public_ip" {
+  value = aws_instance.app_vm.public_ip
 }

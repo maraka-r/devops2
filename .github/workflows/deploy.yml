@@ -1,5 +1,4 @@
-
-name: Build and Deploy Fullstack App (Self-hosted runners)
+name: Build and Deploy Fullstack App
 
 on:
   push:
@@ -18,26 +17,21 @@ jobs:
 
       # Build Frontend
       - name: Build React Frontend Docker image
-        run: docker build -t react-frontend:${{ github.sha }} .
+        run: docker build -t react-frontend:latest .
         working-directory: ./frontend
 
       # Build Backend
       - name: Build Backend API Docker image
-        run: docker build -t backend-api:${{ github.sha }} .
+        run: docker build -t backend-api:latest .
         working-directory: ./backend
 
-      # Save + compress
-      - name: Save and compress React Frontend
+      # Save and compress images
+      - name: Save Docker images
         run: |
-          docker save react-frontend:${{ github.sha }} -o react-frontend.tar
-          gzip -f react-frontend.tar
+          docker save react-frontend:latest | gzip > react-frontend.tar.gz
+          docker save backend-api:latest | gzip > backend-api.tar.gz
 
-      - name: Save and compress Backend API
-        run: |
-          docker save backend-api:${{ github.sha }} -o backend-api.tar
-          gzip -f backend-api.tar
-
-      # Upload
+      # Upload artifacts
       - name: Upload Docker images
         uses: actions/upload-artifact@v4
         with:
@@ -47,117 +41,29 @@ jobs:
             backend-api.tar.gz
 
   # -------------------------
-  # DEPLOY FRONTEND (VM1 + VM2)
+  # DEPLOY TO VM
   # -------------------------
-  deploy-frontend-vm1:
+  deploy:
     needs: build
-    runs-on: [self-hosted, frontend-vm1]
+    runs-on: [self-hosted, app-vm]
     steps:
-      - uses: actions/download-artifact@v4
+      - name: Download Docker images
+        uses: actions/download-artifact@v4
         with:
           name: docker-images
           path: .
-      - name: Load and run React Frontend
+
+      - name: Load Docker images
         run: |
           gunzip -f react-frontend.tar.gz
           docker load -i react-frontend.tar
-          docker stop react-frontend || true
-          docker rm react-frontend || true
-          docker run -d --name react-frontend -p 80:80 react-frontend:${{ github.sha }}
-          docker image prune -af
-          rm -f react-frontend.tar
-
-  deploy-frontend-vm2:
-    needs: build
-    runs-on: [self-hosted, frontend-vm2]
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: docker-images
-          path: .
-      - name: Load and run React Frontend
-        run: |
-          gunzip -f react-frontend.tar.gz
-          docker load -i react-frontend.tar
-          docker stop react-frontend || true
-          docker rm react-frontend || true
-          docker run -d --name react-frontend -p 80:80 react-frontend:${{ github.sha }}
-          docker image prune -af
-          rm -f react-frontend.tar
-
-  # -------------------------
-  # DEPLOY BACKEND (VM1 + VM2)
-  # -------------------------
-  deploy-backend-vm1:
-    needs: build
-    runs-on: [self-hosted, backend-vm1]
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: docker-images
-          path: .
-      - name: Load and run Backend API
-        run: |
           gunzip -f backend-api.tar.gz
           docker load -i backend-api.tar
-          docker stop backend-api || true
-          docker rm backend-api || true
-          docker run -d --name backend-api -p 8000:3000 backend-api:${{ github.sha }}
-          docker image prune -af
-          rm -f backend-api.tar
 
-  deploy-backend-vm2:
-    needs: build
-    runs-on: [self-hosted, backend-vm2]
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: docker-images
-          path: .
-      - name: Load and run Backend API
+      - name: Deploy containers with docker-compose
         run: |
-          gunzip -f backend-api.tar.gz
-          docker load -i backend-api.tar
-          docker stop backend-api || true
-          docker rm backend-api || true
-          docker run -d --name backend-api -p 8000:3000 backend-api:${{ github.sha }}
-          docker image prune -af
-          rm -f backend-api.tar
-
-  # -------------------------
-  # UPDATE LOAD BALANCERS
-  # -------------------------
-  update-loadbalancers:
-    needs: [deploy-frontend-vm1, deploy-frontend-vm2, deploy-backend-vm1, deploy-backend-vm2]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
-
-      - name: Deregister old frontend targets
-        run: |
-          aws elbv2 deregister-targets \
-            --target-group-arn ${{ secrets.FRONTEND_TG_ARN }} \
-            --targets "Id=${{ secrets.VM1_ID }},Port=80" "Id=${{ secrets.VM2_ID }},Port=80"
-
-      - name: Register frontend targets
-        run: |
-          aws elbv2 register-targets \
-            --target-group-arn ${{ secrets.FRONTEND_TG_ARN }} \
-            --targets "Id=${{ secrets.VM1_ID }},Port=80" "Id=${{ secrets.VM2_ID }},Port=80"
-
-      - name: Deregister old backend targets
-        run: |
-          aws elbv2 deregister-targets \
-            --target-group-arn ${{ secrets.BACKEND_TG_ARN }} \
-            --targets "Id=${{ secrets.VM3_ID }},Port=8000" "Id=${{ secrets.VM4_ID }},Port=8000"
-
-      - name: Register backend targets
-        run: |
-          aws elbv2 register-targets \
-            --target-group-arn ${{ secrets.BACKEND_TG_ARN }} \
-            --targets "Id=${{ secrets.VM3_ID }},Port=8000" "Id=${{ secrets.VM4_ID }},Port=8000"
+          mkdir -p ~/fullstack-app
+          cd ~/fullstack-app
+          # Copier le docker-compose.yml depuis le repo
+          cp $GITHUB_WORKSPACE/docker-compose.yml .
+          docker-compose up -d
