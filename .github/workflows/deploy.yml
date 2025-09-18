@@ -16,7 +16,7 @@ jobs:
       FRONTEND_TG: arn:aws:elasticloadbalancing:eu-west-3:426941767449:targetgroup/AWS-IaC-React-Monito-frtg/24d0446d9041a48a
       BACKEND_TG: arn:aws:elasticloadbalancing:eu-west-3:426941767449:targetgroup/AWS-IaC-React-Monito-betg/0690d1c77c526315
       FRONTEND_LB: AWS-IaC-React-Monito-frlb-1163085529.eu-west-3.elb.amazonaws.com
-      BACKEND_LB: AWS-IaC-React-Monito-belb-659257707.eu-west-3.elb.amazonaws.com:5000
+      BACKEND_LB: AWS-IaC-React-Monito-belb-659257707.eu-west-3.elb.amazonaws.com
       FRONTEND_INSTANCES: "51.44.217.43 15.237.115.46"
       BACKEND_INSTANCES: "13.39.104.246 51.44.203.84"
 
@@ -54,8 +54,8 @@ jobs:
         run: |
           for ip in $FRONTEND_INSTANCES; do
             ssh -o StrictHostKeyChecking=no -i private_key.pem ubuntu@$ip \
-            "sudo docker stop frontend 2>/dev/null; \
-             sudo docker rm frontend 2>/dev/null; \
+            "sudo docker stop -f frontend 2>/dev/null; \
+             sudo docker rm -f frontend 2>/dev/null; \
              sudo docker run -d -p 80:80 --name frontend $FRONTEND_ECR"
           done
 
@@ -63,8 +63,8 @@ jobs:
         run: |
           for ip in $BACKEND_INSTANCES; do
             ssh -o StrictHostKeyChecking=no -i private_key.pem ubuntu@$ip \
-            "sudo docker stop backend 2>/dev/null; \
-             sudo docker rm backend 2>/dev/null; \
+            "sudo docker stop -f backend 2>/dev/null; \
+             sudo docker rm -f backend 2>/dev/null; \
              sudo docker run -d -p 5000:8000 --name backend $BACKEND_ECR"
           done
 
@@ -81,7 +81,17 @@ jobs:
       - name: Test Load Balancers
         run: |
           echo "Testing Frontend LB"
-          curl -s -o /dev/null -w "StatusCode %{http_code}\n" http://$FRONTEND_LB
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://$FRONTEND_LB)
+          echo "StatusCode $STATUS"
+          if [ "$STATUS" -ne 200 ]; then
+            echo "Frontend LB not responding correctly!"
+            exit 1
+          fi
 
           echo "Testing Backend LB"
-          curl -s -o /dev/null -w "StatusCode %{http_code}\n" http://$BACKEND_LB
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://$BACKEND_LB:5000)
+          echo "StatusCode $STATUS"
+          if [ "$STATUS" -ne 200 ]; then
+            echo "Backend LB not responding correctly!"
+            exit 1
+          fi
