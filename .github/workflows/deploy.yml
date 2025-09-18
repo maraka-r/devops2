@@ -19,7 +19,6 @@ jobs:
       BACKEND_LB: AWS-IaC-React-Monito-belb-659257707.eu-west-3.elb.amazonaws.com:5000
       FRONTEND_INSTANCES: "51.44.217.43 15.237.115.46"
       BACKEND_INSTANCES: "13.39.104.246 51.44.203.84"
-      SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
 
     steps:
       - name: Checkout repository
@@ -46,18 +45,27 @@ jobs:
           docker tag backend $BACKEND_ECR
           docker push $BACKEND_ECR
 
+      - name: Setup SSH Key
+        run: |
+          echo "${{ secrets.EC2_SSH_KEY }}" > private_key.pem
+          chmod 600 private_key.pem
+
       - name: Deploy to EC2 frontend instances
         run: |
           for ip in $FRONTEND_INSTANCES; do
-            ssh -o StrictHostKeyChecking=no -i $SSH_KEY ubuntu@$ip \
-            "sudo docker stop frontend 2>/dev/null; sudo docker rm frontend 2>/dev/null; sudo docker run -d -p 80:80 --name frontend $FRONTEND_ECR"
+            ssh -o StrictHostKeyChecking=no -i private_key.pem ubuntu@$ip \
+            "sudo docker stop frontend 2>/dev/null; \
+             sudo docker rm frontend 2>/dev/null; \
+             sudo docker run -d -p 80:80 --name frontend $FRONTEND_ECR"
           done
 
       - name: Deploy to EC2 backend instances
         run: |
           for ip in $BACKEND_INSTANCES; do
-            ssh -o StrictHostKeyChecking=no -i $SSH_KEY ubuntu@$ip \
-            "sudo docker stop backend 2>/dev/null; sudo docker rm backend 2>/dev/null; sudo docker run -d -p 5000:8000 --name backend $BACKEND_ECR"
+            ssh -o StrictHostKeyChecking=no -i private_key.pem ubuntu@$ip \
+            "sudo docker stop backend 2>/dev/null; \
+             sudo docker rm backend 2>/dev/null; \
+             sudo docker run -d -p 5000:8000 --name backend $BACKEND_ECR"
           done
 
       - name: Check Target Group Health
