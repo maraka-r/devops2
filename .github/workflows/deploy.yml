@@ -87,11 +87,39 @@ jobs:
             echo "Frontend LB not responding correctly!"
             exit 1
           fi
-
           echo "Testing Backend LB"
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://$BACKEND_LB:5000)
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 15 http://$BACKEND_LB:5000)
           echo "StatusCode $STATUS"
           if [ "$STATUS" -ne 200 ]; then
-            echo "Backend LB not responding correctly!"
-            exit 1
+          echo "Backend LB not responding correctly!"
+          exit 1
           fi
+
+      - name: Test Load Balancers
+        run: |
+          check_lb() {
+            NAME=$1
+            URL=$2
+            EXPECTED=$3
+            RETRIES=5
+            DELAY=5
+
+            echo "Testing $NAME at $URL"
+            for i in $(seq 1 $RETRIES); do
+              STATUS=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 10 $URL || echo "000")
+              echo "Attempt $i/$RETRIES => StatusCode $STATUS"
+              if [ "$STATUS" -eq "$EXPECTED" ]; then
+                echo "$NAME is healthy ✅"
+                return 0
+              fi
+              sleep $DELAY
+            done
+            echo "$NAME did not respond correctly ❌"
+            exit 1
+          }
+
+          # Frontend LB (port 80)
+          check_lb "Frontend LB" "http://$FRONTEND_LB" 200
+
+          # Backend LB (port 5000)
+          check_lb "Backend LB" "http://$BACKEND_LB:5000" 200
