@@ -1,4 +1,4 @@
-name: Build and Deploy Fullstack App
+name: CI/CD Deployment with Health Check
 
 on:
   push:
@@ -6,64 +6,74 @@ on:
       - main
 
 jobs:
-  # -------------------------
-  # BUILD
-  # -------------------------
-  build:
+  deploy:
     runs-on: ubuntu-latest
+
+    env:
+      AWS_REGION: eu-west-3
+      FRONTEND_ECR: 426941767449.dkr.ecr.eu-west-3.amazonaws.com/frontend-app:latest
+      BACKEND_ECR: 426941767449.dkr.ecr.eu-west-3.amazonaws.com/backend-app:latest
+      FRONTEND_TG: arn:aws:elasticloadbalancing:eu-west-3:426941767449:targetgroup/AWS-IaC-React-Monito-frtg/24d0446d9041a48a
+      BACKEND_TG: arn:aws:elasticloadbalancing:eu-west-3:426941767449:targetgroup/AWS-IaC-React-Monito-betg/0690d1c77c526315
+      FRONTEND_LB: AWS-IaC-React-Monito-frlb-1163085529.eu-west-3.elb.amazonaws.com
+      BACKEND_LB: AWS-IaC-React-Monito-belb-659257707.eu-west-3.elb.amazonaws.com:5000
+      FRONTEND_INSTANCES: "51.44.217.43 15.237.115.46"
+      BACKEND_INSTANCES: "13.39.104.246 51.44.203.84"
+      SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+
     steps:
-      - name: Checkout repo
+      - name: Checkout repository
         uses: actions/checkout@v3
 
-      # Build Frontend
-      - name: Build React Frontend Docker image
-        run: docker build -t react-frontend:latest .
-        working-directory: ./frontend
-
-      # Build Backend
-      - name: Build Backend API Docker image
-        run: docker build -t backend-api:latest .
-        working-directory: ./backend
-
-      # Save and compress images
-      - name: Save Docker images
-        run: |
-          docker save react-frontend:latest | gzip > react-frontend.tar.gz
-          docker save backend-api:latest | gzip > backend-api.tar.gz
-
-      # Upload artifacts
-      - name: Upload Docker images
-        uses: actions/upload-artifact@v4
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
         with:
-          name: docker-images
-          path: |
-            react-frontend.tar.gz
-            backend-api.tar.gz
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
 
-  # -------------------------
-  # DEPLOY TO VM
-  # -------------------------
-  deploy:
-    needs: build
-    runs-on: [self-hosted, app-vm]
-    steps:
-      - name: Download Docker images
-        uses: actions/download-artifact@v4
-        with:
-          name: docker-images
-          path: .
-
-      - name: Load Docker images
+      - name: Login to ECR
         run: |
-          gunzip -f react-frontend.tar.gz
-          docker load -i react-frontend.tar
-          gunzip -f backend-api.tar.gz
-          docker load -i backend-api.tar
+          aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin 426941767449.dkr.ecr.eu-west-3.amazonaws.com
 
-      - name: Deploy containers with docker-compose
+      - name: Build and push Docker images
         run: |
-          mkdir -p ~/fullstack-app
-          cd ~/fullstack-app
-          # Copier le docker-compose.yml depuis le repo
-          cp $GITHUB_WORKSPACE/docker-compose.yml .
-          docker-compose up -d
+          docker build -t frontend ./frontend
+          docker tag frontend $FRONTEND_ECR
+          docker push $FRONTEND_ECR
+
+          docker build -t backend ./backend
+          docker tag backend $BACKEND_ECR
+          docker push $BACKEND_ECR
+
+      - name: Deploy to EC2 frontend instances
+        run: |
+          for ip in $FRONTEND_INSTANCES; do
+            ssh -o StrictHostKeyChecking=no -i $SSH_KEY ubuntu@$ip \
+            "sudo docker stop frontend 2>/dev/null; sudo docker rm frontend 2>/dev/null; sudo docker run -d -p 80:80 --name frontend $FRONTEND_ECR"
+          done
+
+      - name: Deploy to EC2 backend instances
+        run: |
+          for ip in $BACKEND_INSTANCES; do
+            ssh -o StrictHostKeyChecking=no -i $SSH_KEY ubuntu@$ip \
+            "sudo docker stop backend 2>/dev/null; sudo docker rm backend 2>/dev/null; sudo docker run -d -p 5000:8000 --name backend $BACKEND_ECR"
+          done
+
+      - name: Check Target Group Health
+        run: |
+          echo "=== Frontend TG ==="
+          aws elbv2 describe-target-health --target-group-arn $FRONTEND_TG \
+            --query 'TargetHealthDescriptions[*].{ID:Target.Id,State:TargetHealth.State}' --output table
+
+          echo "=== Backend TG ==="
+          aws elbv2 describe-target-health --target-group-arn $BACKEND_TG \
+            --query 'TargetHealthDescriptions[*].{ID:Target.Id,State:TargetHealth.State}' --output table
+
+      - name: Test Load Balancers
+        run: |
+          echo "Testing Frontend LB"
+          curl -s -o /dev/null -w "StatusCode %{http_code}\n" http://$FRONTEND_LB
+
+          echo "Testing Backend LB"
+          curl -s -o /dev/null -w "StatusCode %{http_code}\n" http://$BACKEND_LB

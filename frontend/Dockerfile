@@ -1,16 +1,23 @@
-# frontend/Dockerfile
-FROM node:18-alpine
+# Étape 1 : Build de l'app React
+FROM node:18-alpine AS build
 
 WORKDIR /app
-
 COPY package*.json ./
-
-RUN npm install
-
+RUN npm install --frozen-lockfile
 COPY . .
+RUN npm run build
 
-ENV REACT_APP_BACKEND_URL=http://localhost:8000/api
+# Étape 2 : Serveur nginx
+FROM nginx:alpine
 
-EXPOSE 3000
+# Supprimer la config par défaut de nginx
+RUN rm -rf /usr/share/nginx/html/*
 
-CMD ["npm", "start"]
+# Copier les fichiers buildés dans nginx
+COPY --from=build /app/build /usr/share/nginx/html
+
+# Exposer le port
+EXPOSE 80
+
+# Lancer nginx
+CMD ["nginx", "-g", "daemon off;"]

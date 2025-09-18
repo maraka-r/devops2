@@ -1,15 +1,11 @@
-const express = require('express');
-const cors = require('cors');
-
+const express = require("express");
 const app = express();
+const port = 8000;
 
-app.use(cors());
-
-app.get('/api/hello', (req, res) => {
-  res.json({ message: "Bienvenue sur l’API backend 🚀" });
+app.get("/", (req, res) => {
+  res.send("Hello Backend depuis Express + Docker v2");
 });
 
-const PORT = process.env.PORT || 8000;
-app.listen(PORT, () => {
-  console.log(`✅ Backend API is running at http://localhost:${PORT}`);
+app.listen(port, () => {
+  console.log(`Backend listening on http://localhost:${port}`);
 });
