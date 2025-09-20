@@ -69,13 +69,14 @@ resource "aws_route_table_association" "subnet_b_assoc" {
 }
 
 # ========================================
-# Security Groups
+# Security Group pour ALB
 # ========================================
 resource "aws_security_group" "alb_sg" {
   name   = "${var.project_name}-alb-sg"
   vpc_id = aws_vpc.main.id
 
   ingress {
+    description = "HTTP depuis Internet"
     from_port   = 80
     to_port     = 80
     protocol    = "tcp"
@@ -88,12 +89,20 @@ resource "aws_security_group" "alb_sg" {
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
+
+  lifecycle {
+    ignore_changes = [ingress]
+  }
 }
 
+# ========================================
+# Security Group pour instances Web (Frontend + Backend)
+# ========================================
 resource "aws_security_group" "web_sg" {
   name   = "${var.project_name}-web-sg"
   vpc_id = aws_vpc.main.id
 
+  # Frontend depuis ALB
   ingress {
     description     = "Frontend depuis ALB"
     from_port       = var.frontend_port
@@ -102,6 +111,7 @@ resource "aws_security_group" "web_sg" {
     security_groups = [aws_security_group.alb_sg.id]
   }
 
+  # Backend depuis ALB
   ingress {
     description     = "Backend depuis ALB"
     from_port       = var.backend_port
@@ -110,6 +120,7 @@ resource "aws_security_group" "web_sg" {
     security_groups = [aws_security_group.alb_sg.id]
   }
 
+  # SSH depuis IP admin
   ingress {
     description = "SSH depuis IP admin"
     from_port   = 22
@@ -118,13 +129,20 @@ resource "aws_security_group" "web_sg" {
     cidr_blocks = [var.ssh_allowed_cidr]
   }
 
+  # Egress général
   egress {
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
+
+  # Ignorer les modifications des règles déjà existantes
+  lifecycle {
+    ignore_changes = [ingress]
+  }
 }
+
 
 # ========================================
 # IAM Role pour EC2 -> accès ECR
@@ -179,7 +197,7 @@ systemctl enable docker
 aws ecr get-login-password --region eu-west-3 | docker login --username AWS --password-stdin 426941767449.dkr.ecr.eu-west-3.amazonaws.com
 
 docker pull 426941767449.dkr.ecr.eu-west-3.amazonaws.com/backend-app:latest
-docker run -d -p 5000:5000 --name backend 426941767449.dkr.ecr.eu-west-3.amazonaws.com/backend-app:latest
+docker run -d -p 80:5000 --name backend 426941767449.dkr.ecr.eu-west-3.amazonaws.com/backend-app:latest
 EOF
 }
 
@@ -232,7 +250,7 @@ resource "aws_lb" "backend_lb" {
 }
 
 # ========================================
-# Target Groups avec Health Checks (ignore_changes)
+# Target Groups
 # ========================================
 resource "aws_lb_target_group" "frontend_tg" {
   name     = "AWS-IaC-React-Monito-frtg"
@@ -275,7 +293,7 @@ resource "aws_lb_target_group" "backend_tg" {
 }
 
 # ========================================
-# Listeners (ignore_changes)
+# Listeners
 # ========================================
 resource "aws_lb_listener" "frontend_listener" {
   load_balancer_arn = aws_lb.frontend_lb.arn

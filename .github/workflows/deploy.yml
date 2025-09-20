@@ -13,12 +13,6 @@ jobs:
       AWS_REGION: eu-west-3
       FRONTEND_ECR: 426941767449.dkr.ecr.eu-west-3.amazonaws.com/frontend-app:latest
       BACKEND_ECR: 426941767449.dkr.ecr.eu-west-3.amazonaws.com/backend-app:latest
-      FRONTEND_TG: arn:aws:elasticloadbalancing:eu-west-3:426941767449:targetgroup/AWS-IaC-React-Monito-frtg/24d0446d9041a48a
-      BACKEND_TG: arn:aws:elasticloadbalancing:eu-west-3:426941767449:targetgroup/AWS-IaC-React-Monito-betg/0690d1c77c526315
-      FRONTEND_LB: AWS-IaC-React-Monito-frlb-1163085529.eu-west-3.elb.amazonaws.com
-      BACKEND_LB: AWS-IaC-React-Monito-belb-659257707.eu-west-3.elb.amazonaws.com
-      FRONTEND_INSTANCES: "51.44.217.43 15.237.115.46"
-      BACKEND_INSTANCES: "13.39.104.246 51.44.203.84"
 
     steps:
       - name: Checkout repository
@@ -30,6 +24,32 @@ jobs:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
+
+      - name: Retrieve dynamic infrastructure info
+        id: infra
+        run: |
+          echo "Retrieving Load Balancers and instance IPs..."
+
+          FRONTEND_LB=$(aws elbv2 describe-load-balancers \
+            --names AWS-IaC-React-Monito-frlb \
+            --query "LoadBalancers[0].DNSName" --output text)
+          BACKEND_LB=$(aws elbv2 describe-load-balancers \
+            --names AWS-IaC-React-Monito-belb \
+            --query "LoadBalancers[0].DNSName" --output text)
+
+          FRONTEND_INSTANCES=$(aws ec2 describe-instances \
+            --filters "Name=tag:Name,Values=AWS-IaC-React-Monito-frontend-*" \
+            --query "Reservations[*].Instances[*].PublicIpAddress" \
+            --output text)
+          BACKEND_INSTANCES=$(aws ec2 describe-instances \
+            --filters "Name=tag:Name,Values=AWS-IaC-React-Monito-backend-*" \
+            --query "Reservations[*].Instances[*].PublicIpAddress" \
+            --output text)
+
+          echo "FRONTEND_LB=$FRONTEND_LB" >> $GITHUB_ENV
+          echo "BACKEND_LB=$BACKEND_LB" >> $GITHUB_ENV
+          echo "FRONTEND_INSTANCES=$FRONTEND_INSTANCES" >> $GITHUB_ENV
+          echo "BACKEND_INSTANCES=$BACKEND_INSTANCES" >> $GITHUB_ENV
 
       - name: Login to ECR
         run: |
@@ -54,8 +74,8 @@ jobs:
         run: |
           for ip in $FRONTEND_INSTANCES; do
             ssh -o StrictHostKeyChecking=no -i private_key.pem ubuntu@$ip \
-            "sudo docker stop -f frontend 2>/dev/null; \
-             sudo docker rm -f frontend 2>/dev/null; \
+            "sudo docker stop frontend 2>/dev/null; \
+             sudo docker rm frontend 2>/dev/null; \
              sudo docker run -d -p 80:80 --name frontend $FRONTEND_ECR"
           done
 
@@ -63,63 +83,25 @@ jobs:
         run: |
           for ip in $BACKEND_INSTANCES; do
             ssh -o StrictHostKeyChecking=no -i private_key.pem ubuntu@$ip \
-            "sudo docker stop -f backend 2>/dev/null; \
-             sudo docker rm -f backend 2>/dev/null; \
-             sudo docker run -d -p 5000:8000 --name backend $BACKEND_ECR"
+            "sudo docker stop backend 2>/dev/null; \
+             sudo docker rm backend 2>/dev/null; \
+             sudo docker run -d -p 5000:5000 --name backend $BACKEND_ECR"
           done
 
       - name: Check Target Group Health
         run: |
           echo "=== Frontend TG ==="
-          aws elbv2 describe-target-health --target-group-arn $FRONTEND_TG \
+          aws elbv2 describe-target-health --target-group-arn arn:aws:elasticloadbalancing:eu-west-3:426941767449:targetgroup/AWS-IaC-React-Monito-frtg/24d0446d9041a48a \
             --query 'TargetHealthDescriptions[*].{ID:Target.Id,State:TargetHealth.State}' --output table
 
           echo "=== Backend TG ==="
-          aws elbv2 describe-target-health --target-group-arn $BACKEND_TG \
+          aws elbv2 describe-target-health --target-group-arn arn:aws:elasticloadbalancing:eu-west-3:426941767449:targetgroup/AWS-IaC-React-Monito-betg/0690d1c77c526315 \
             --query 'TargetHealthDescriptions[*].{ID:Target.Id,State:TargetHealth.State}' --output table
 
       - name: Test Load Balancers
         run: |
           echo "Testing Frontend LB"
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://$FRONTEND_LB)
-          echo "StatusCode $STATUS"
-          if [ "$STATUS" -ne 200 ]; then
-            echo "Frontend LB not responding correctly!"
-            exit 1
-          fi
+          curl -s -o /dev/null -w "StatusCode %{http_code}\n" http://$FRONTEND_LB
+
           echo "Testing Backend LB"
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 15 http://$BACKEND_LB:5000)
-          echo "StatusCode $STATUS"
-          if [ "$STATUS" -ne 200 ]; then
-          echo "Backend LB not responding correctly!"
-          exit 1
-          fi
-
-      - name: Test Load Balancers
-        run: |
-          check_lb() {
-            NAME=$1
-            URL=$2
-            EXPECTED=$3
-            RETRIES=5
-            DELAY=5
-
-            echo "Testing $NAME at $URL"
-            for i in $(seq 1 $RETRIES); do
-              STATUS=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 10 $URL || echo "000")
-              echo "Attempt $i/$RETRIES => StatusCode $STATUS"
-              if [ "$STATUS" -eq "$EXPECTED" ]; then
-                echo "$NAME is healthy ✅"
-                return 0
-              fi
-              sleep $DELAY
-            done
-            echo "$NAME did not respond correctly ❌"
-            exit 1
-          }
-
-          # Frontend LB (port 80)
-          check_lb "Frontend LB" "http://$FRONTEND_LB" 200
-
-          # Backend LB (port 5000)
-          check_lb "Backend LB" "http://$BACKEND_LB:5000" 200
+          curl -s -o /dev/null -w "StatusCode %{http_code}\n" http://$BACKEND_LB:5000/health

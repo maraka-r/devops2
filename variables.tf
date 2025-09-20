@@ -119,8 +119,9 @@ variable "frontend_port" {
 variable "backend_port" {
   description = "Port d'écoute pour le backend"
   type        = number
-  default     = 5000
+  default     = 80
 }
+
 
 
 
